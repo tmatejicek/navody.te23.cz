@@ -1,8 +1,10 @@
+---
 title: "Použití Managed Service Accounts pro SQL Server"
 date: "2025-03-05"
 categories: [SQL, Security, Windows Server]
 tags: [MSA, gMSA, SQL Server, Active Directory]
 layout: post
+---
 
 ## Použití Managed Service Accounts pro SQL Server
 
