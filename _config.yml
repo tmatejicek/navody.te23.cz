@@ -1,7 +1,9 @@
 lang: cs-CZ
 title: Návody
 description: 
-show_downloads: false
 theme: minima
 
 baseurl: /
+
+minima:
+  show_excerpts: true
