@@ -1,3 +1,7 @@
-theme: minima
+lang: cs-CZ
 title: Návody
 description: 
+show_downloads: false
+theme: minima
+
+baseurl: /
