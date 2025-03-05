@@ -12,6 +12,9 @@ plugins:
 
 remote_theme: jekyll/minima
 
+sass:
+  style: compressed
+
 baseurl: /
 
 minima:
