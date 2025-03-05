@@ -15,5 +15,4 @@ remote_theme: jekyll/minima
 baseurl: /
 
 minima:
-  show_excerpts: true
   date_format: "%Y-%m-%d"
