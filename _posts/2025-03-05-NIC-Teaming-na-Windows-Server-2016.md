@@ -5,19 +5,19 @@ tags: [NIC Teaming, Windows Server, Networking, LBFO]
 layout: post
 ---
 
-# Jak nastavit NIC Teaming na Windows Server 2016
+## Jak nastavit NIC Teaming na Windows Server 2016
 
 NIC Teaming (též známý jako Load Balancing and Failover, LBFO) umožňuje spojit více síťových adaptérů do jednoho logického rozhraní, čímž zajišťuje vyšší dostupnost a zlepšuje síťový výkon. Tento návod vás krok za krokem provede nastavením teaming na Windows Server 2016.
 
-## Požadavky
+---
+## 1. Požadavky
 
 - Windows Server 2016
 - Minimálně dvě síťové karty
 - Administrátorský přístup k serveru
 
-## Postup nastavení
-
-### 1. Otevření Správce serveru
+---
+## 2. Otevření Správce serveru
 
 1. Přihlaste se na server s administrátorskými oprávněními.
 2. Otevřete **Správce serveru** (Server Manager).
@@ -25,7 +25,8 @@ NIC Teaming (též známý jako Load Balancing and Failover, LBFO) umožňuje sp
 4. V pravé části vyhledejte položku **NIC Teaming** – výchozí stav je „Zakázáno“.
 5. Klikněte na **Zakázáno**, čímž se otevře okno pro konfiguraci teaming.
 
-### 2. Vytvoření týmu síťových adaptérů
+---
+## 3. Vytvoření týmu síťových adaptérů
 
 1. V okně **NIC Teaming** klikněte na **Tasks** (Úkoly) v pravém horním rohu a vyberte **New Team** (Nový tým).
 2. Zadejte název týmu (např. „Team1“).
@@ -42,7 +43,8 @@ NIC Teaming (též známý jako Load Balancing and Failover, LBFO) umožňuje sp
    - **Standby Adapter**: Můžete určit adaptér jako záložní (volitelné).
 5. Klikněte na **OK** a počkejte na vytvoření týmu.
 
-### 3. Ověření funkčnosti
+---
+## 4. Ověření funkčnosti
 
 1. Po vytvoření týmu přejděte do **Centra síťových připojení**:
    - Otevřete **Ovládací panely** → **Síť a internet** → **Centrum síťových připojení a sdílení**.
@@ -58,11 +60,13 @@ NIC Teaming (též známý jako Load Balancing and Failover, LBFO) umožňuje sp
    Tento příkaz zobrazí stav a konfiguraci NIC Teamingu.
 5. Zkuste provést **ping** na jiný server v síti a sledujte odezvu.
 
-### 4. Testování odolnosti proti výpadku
+---
+## 5. Testování odolnosti proti výpadku
 
 1. Odpojte jednu ze síťových karet a ověřte, zda připojení stále funguje.
 2. Připojte síťovou kartu zpět a ujistěte se, že se adaptér automaticky znovu připojí.
 
+---
 ## Závěr
 
 NIC Teaming na Windows Server 2016 je užitečná technologie pro zvýšení dostupnosti a propustnosti sítě. Tento postup vám pomůže správně nakonfigurovat teaming a zajistit stabilní síťové připojení i při výpadku jednoho z adaptérů.
