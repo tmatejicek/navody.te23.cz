@@ -1,0 +1,1 @@
+# navody.te23.cz
