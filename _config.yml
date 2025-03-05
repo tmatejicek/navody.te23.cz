@@ -1,9 +1,16 @@
 lang: cs-CZ
 title: Návody
-description: 
+author:
+  name: Tomáš Matějíček
+  email: t@te23.cz
+
+description: >
+  Postupy a návody
+
 theme: minima
 
 baseurl: /
 
 minima:
   show_excerpts: true
+  date_format: "%Y-%m-%d"
