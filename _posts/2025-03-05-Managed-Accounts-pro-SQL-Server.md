@@ -100,6 +100,22 @@ Get-Command Install-ADServiceAccount
 
 Pokud je modul správně načtený, můžeme pokračovat v nastavení MSA.
 
+### 3.3 Instalace MSA na SQL Server
+
+Na **SQL Serveru**, kde poběží databázová instance, spustíme PowerShell:
+
+```powershell
+Install-ADServiceAccount -Identity SQLMSA
+```
+
+Poté ověříme, zda je účet správně nainstalován:
+
+```powershell
+Test-ADServiceAccount -Identity SQLMSA
+```
+
+Pokud se vrátí **True**, účet je připraven.
+
 ---
 
 ## 4. Nastavení SQL Serveru pro použití MSA
