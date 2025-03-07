@@ -76,7 +76,6 @@ Get-Module -ListAvailable | Where-Object { $_.Name -eq "ActiveDirectory" }
 
 Pokud příkaz **nevrátí žádný výstup**, znamená to, že modul není nainstalovaný a musíme ho přidat.
 
-#### Na Windows Serveru:
 
 Pokud běžíme na Windows Serveru, nainstalujeme modul Active Directory pomocí:
 
