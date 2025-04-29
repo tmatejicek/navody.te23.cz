@@ -7,7 +7,7 @@ layout: post
 
 ## Použití KDC Proxy Service pro Kerberos ověřování přes HTTPS
 
-Kerberos je standardem pro autentizaci v Active Directory. Však v prostředích s VPN (zejména split-tunnel VPN) nebo v extranetových scénářích může být klasické Kerberos ověřování problémové kvůli blokovaným portům 88/464 TCP. 
+Kerberos je standardem pro autentizaci v Active Directory. Však v prostředích s VPN (zejména split-tunnel VPN) nebo v extranetových scénářích může být klasické Kerberos ověřování problémové kvůli blokovaným portům 88/464 TCP.
 
 Řešením je **KDC Proxy Service (KPSSVC)**, která umožňuje proxyování Kerberosu přes HTTPS (port 443). V tomto návodu si ukážeme, jak ji správně nastavit a použít.
 
@@ -74,9 +74,9 @@ New-NetFirewallRule -DisplayName "Allow KDCProxy TCP $KpsPort" -Direction Inboun
 
 ---
 
-## 3. Nastavení klientů pomocí Group Policy
+## 3. Nastavení klientů
 
-### 3.1 Vytvoření a konfigurace GPO
+### 3.1 Pomocí Group Policy
 
 1. Otevřeme **Group Policy Management Console (GPMC.msc)**.
 2. Vytvoříme novou Group Policy Object (GPO) např. `KDC Proxy Settings`.
@@ -95,10 +95,30 @@ New-NetFirewallRule -DisplayName "Allow KDCProxy TCP $KpsPort" -Direction Inboun
 <https kps1.example.com:443:KdcProxy kps2.example.com:443:KdcProxy />
 ```
 
-### 3.2 Aplikace změn
-
 - Po aplikaci GPO doporučujeme klienty restartovat nebo spustit `gpupdate /force`.
-- Klienti musí mít přístup k CRL/CDP bodům pro ověření certifikátu serveru.
+
+### 3.2 Pomocí Intune (Microsoft Endpoint Manager)
+
+Pokud spravujeme klienty pomocí **Intune**, můžeme nastavit KDC Proxy přes **oma-uri** profil.
+
+📌 Postup:
+- V Intune vytvoříme nový **Device Configuration Profile** typu **Templates > Custom**.
+- Přidáme novou OMA-URI konfiguraci:
+   - **Name:** KDC Proxy Settings
+   - **OMA-URI:** `./Device/Vendor/MSFT/Policy/Config/System/KDCProxySettings`
+   - **Data type:** String (XML)
+   - **Value:**
+
+```xml
+<enabled/> 
+<servers>
+<https kps.example.com:443:KdcProxy />
+</servers>
+```
+
+- Při více serverech uvedeme více <https> prvků v sekci `<servers>`.
+
+- Po aplikaci politiky doporučujeme klienty restartovat.
 
 ---
 
@@ -146,7 +166,7 @@ Pokud proxy funguje, ticket bude úspěšně vydán.
 ✅ **KDC Proxy umožňuje bezpečné Kerberos ověřování přes HTTPS.**  
 ✅ **Nepožaduje instalaci IIS, KPSSVC běží nativně v systému.**  
 ✅ **Vyžaduje platný Server Authentication certifikát.**  
-✅ **Klienti jsou nastaveni pomocí Group Policy.**  
+✅ **Klienty lze nastavit pomocí Group Policy i Intune (OMA-URI profil).**  
 ✅ **Troubleshooting je snadný pomocí event logů a klist testů.**
 
 Tímto jsme úěšně nastavili KDC Proxy pro bezpečné Kerberos ověřování přes újišťěný kanál! 🌟
