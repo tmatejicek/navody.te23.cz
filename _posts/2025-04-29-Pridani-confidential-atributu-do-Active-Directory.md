@@ -143,11 +143,11 @@ $user.SetInfo()
 
 ## Shrnutí
 
-Přidání vlastního atributu do AD vyžaduje úpravu schématu 🎯  
-Povolení úprav schématu se nastavuje přes registr pomocí klíče `Schema Update Allowed` 🎯  
-Atribut musí být připojen k objektové třídě pomocí `mayContain` 🎯  
-Práva na atribut nastavujeme pomocí ACL na objektech, ne ve schématu 🎯  
-Pro zápis vlastních atributů je nutné používat ADSI, ne standardní cmdlety 🎯  
-Před jakoukoliv změnou schématu je nutné mít zálohu a testovat v izolovaném prostředí 🎯  
-Testování čtení a zápisu ověří správné nastavení práv 🎯
+✅ Přidání vlastního atributu do AD vyžaduje úpravu schématu  
+✅ Povolení úprav schématu se nastavuje přes registr pomocí klíče `Schema Update Allowed`  
+✅ Atribut musí být připojen k objektové třídě pomocí `mayContain`  
+✅ Práva na atribut nastavujeme pomocí ACL na objektech, ne ve schématu  
+✅ Pro zápis vlastních atributů je nutné používat ADSI, ne standardní cmdlety  
+✅ Před jakoukoliv změnou schématu je nutné mít zálohu a testovat v izolovaném prostředí  
+✅ Testování čtení a zápisu ověří správné nastavení práv
 
