@@ -38,6 +38,11 @@ V sekci nastavení politiky nakonfigurujte:
   - **Require device encryption for operating system drives**: `Yes`
   - **Require device encryption for fixed drives**: `Yes`
 
+**Použité šifrovací algoritmy:**
+
+- Ve výchozím nastavení Intune se pro šifrování pevných disků používá algoritmus **AES 128bit XTS**.
+- Národní údrad pro kybernetickou a informační bezpečnost (NUKIB) v materiálu [Minimální požadavky na kryptografické prostředky v4](https://nukib.gov.cz/download/publikace/podpurne_materialy/Minimalni_pozadavky_v4_FINAL.pdf) (kapitola 2.f)) doporučuje pro šifrování disků algoritmy **XTS** nebo **EME2**.
+
 ```powershell
 # Ukázka Powershellu pro ruční kontrolu stavů BitLockeru
 Get-BitLockerVolume
