@@ -99,9 +99,9 @@ Get-IntuneCompliancePolicyDeviceSettingState
 
 ## Shrnutí
 
-✅ Příprava zařízení pro BitLocker šifrování
-✅ Vytvoření politiky šifrování v Endpoint Security
-✅ Ukládání obnovovacích klíčů do Azure AD (Entra ID)
-✅ Správné přiřazení a testovací nasazení
-✅ Kontrola stavů a enforcement compliance politik
-✅ Dodržování doporučených postupů a vyvarování se častým chybám
+✅ Příprava zařízení pro BitLocker šifrování.  
+✅ Vytvoření politiky šifrování v Endpoint Security.  
+✅ Ukládání obnovovacích klíčů do Azure AD (Entra ID)  
+✅ Správné přiřazení a testovací nasazení  
+✅ Kontrola stavů a enforcement compliance politik  
+✅ Dodržování doporučených postupů a vyvarování se častým chybám  
