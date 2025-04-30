@@ -102,22 +102,32 @@ Postup v ADSI Edit:
 - 📌 Oprávnění se nastavuje na **objekty nebo OU**, ne na samotný atribut ve schématu.
 
 ### 3.2 Nastavení oprávnění na celou doménu
-Použij nástroj `dsacls`:
+Použij nástroj `dsacls`.  
+Pro `CONFIDENTIAL` atribut je vhodné rozlišit:
 
-```powershell
-dsacls "DC=firma,DC=cz" /I:T /G "DOMENA\HR Team:RPWP;confidentialAttribute;user"
+- 📖 **Pouze čtení**:
+
+```cmd
+dsacls "OU=Zamestnanci,DC=firma,DC=cz" /I:S /G "DOMENA\HR Team:RPCA;confidentialAttribute;user"
 ```
 
-- `RPWP` znamená **Read Property** a **Write Property**.
-- Dědičnost (`/I:T`) zajistí propagaci na všechny podřízené objekty.
+- ✍️ **Pouze zápis**:
 
-✅ **Poznámka**: `RP` (Read Property) umožňuje pouze čtení, `WP` (Write Property) umožňuje zapisovat hodnotu atributu. Pokud chceš obě možnosti, použij kombinaci `RPWP`.
+```cmd
+dsacls "OU=Zamestnanci,DC=firma,DC=cz" /I:S /G "DOMENA\IT Team:WPCA;confidentialAttribute;user"
+```
+
+- `RP` = Read Property
+- `WP` = Write Property
+- `CA` = Control Access (nutné pro confidential atributy)
+
+✅ V praxi často nastavujeme čtení a zápis odděleně podle role (např. HR může číst, IT může zapisovat).
 
 ---
 
 ## 4. Testování čtení a zápisu
 
-### 4.1 Skript pro čtení atributu
+### 4.1 Skript pro čtení atributu přes Get-ADUser
 
 ```powershell
 $user = Get-ADUser -Identity "testuser" -Properties confidentialAttribute
@@ -126,7 +136,44 @@ $user | Select-Object SamAccountName, confidentialAttribute
 
 ✅ Pokud máš práva, uvidíš hodnotu atributu.
 
-### 4.2 Skript pro zápis atributu
+### 4.2 Skript pro čtení atributu přes LDAP jako konkrétní uživatel
+
+```powershell
+# === ZADÁNÍ PARAMETRŮ ===
+$ldapServer = "ldap.example.local"
+$ldapUser = "DOMENA\ldap-user"
+$searchBase = "DC=firma,DC=cz"
+
+# === ZADÁNÍ HESLA ===
+$password = Read-Host -AsSecureString "Zadej heslo pro $ldapUser"
+$ldapPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
+)
+
+# LDAP filtr pro uživatele
+$filter = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=testuser))"
+
+# Atributy
+$properties = @("samAccountName", "confidentialAttribute")
+
+# Sestavení úplného LDAP URI
+$ldapPath = "LDAP://$ldapServer/$searchBase"
+
+# Připojení k LDAPu
+$entry = New-Object System.DirectoryServices.DirectoryEntry($ldapPath, $ldapUser, $ldapPassword)
+$searcher = New-Object System.DirectoryServices.DirectorySearcher($entry)
+$searcher.Filter = $filter
+$properties | ForEach-Object { $searcher.PropertiesToLoad.Add($_) } | Out-Null
+
+# Výpis výsledků
+$results = $searcher.FindAll()
+foreach ($result in $results) {
+    $user = $result.Properties
+    Write-Output "$($user['samaccountname']) - $($user['confidentialAttribute'])"
+}
+```
+
+### 4.3 Skript pro zápis atributu
 
 **Pozor:** `Set-ADUser` standardně nepodporuje zápis vlastních atributů, pokud nejsou zahrnuty v oficiálních AD cmdletech. Proto je nutné zapisovat přes ADSI rozhraní.
 
@@ -144,10 +191,12 @@ $user.SetInfo()
 ## Shrnutí
 
 ✅ Přidání vlastního atributu do AD vyžaduje úpravu schématu  
-✅ Povolení úprav schématu se nastavuje přes registr pomocí klíče `Schema Update Allowed`  
+✅ Povolení úprav schématu se nastavuje přes registr pomocí klíče `Schema Update Allowed`    
 ✅ Atribut musí být připojen k objektové třídě pomocí `mayContain`  
-✅ Práva na atribut nastavujeme pomocí ACL na objektech, ne ve schématu  
+✅ Pro zpřístupnění confidential atributu nestačí `Read Property` – je nutné přidat i `Control Access` pomocí `CA`    
+✅ `dsacls.exe` lze použít, pokud je syntaxe přesná: `RPCA;atribut;typ`    
+✅ Čtení a zápis lze nastavovat odděleně pomocí `RPCA` a `WP`  
 ✅ Pro zápis vlastních atributů je nutné používat ADSI, ne standardní cmdlety  
-✅ Před jakoukoliv změnou schématu je nutné mít zálohu a testovat v izolovaném prostředí  
-✅ Testování čtení a zápisu ověří správné nastavení práv
+✅ Před jakoukoliv změnou schématu je nutné mít zálohu a testovat v izolovaném prostředí    
+✅ Testování čtení a zápisu ověří správné nastavení práv  
 
