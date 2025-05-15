@@ -1,6 +1,6 @@
 ---
 title: "Vytvoření vlastní šablony certifikátu pro doménové řadiče"
-date: "2025-05-15"
+date: 2025-05-15
 tags: [PKI, Active Directory, Security]
 layout: post
 ---
@@ -103,8 +103,8 @@ certreq -new -config "CA\NAZEV" -attrib "CertificateTemplate:SecuredDCAuthentica
 
 ## Shrnutí
 
-✅ Vyšli jsme ze šablony Kerberos Authentication
-✅ Doplnili jsme Subject a SAN pomocí AD atributů
-✅ Zkontrolovali jsme a doplnili potřebné EKU, včetně KDC Authentication
-✅ Upravili jsme oprávnění pro vydávání doménovým řadičům
+✅ Vyšli jsme ze šablony Kerberos Authentication  
+✅ Doplnili jsme Subject a SAN pomocí AD atributů  
+✅ Zkontrolovali jsme a doplnili potřebné EKU, včetně KDC Authentication  
+✅ Upravili jsme oprávnění pro vydávání doménovým řadičům  
 ✅ Publikovali jsme šablonu a připravili ji k použití
