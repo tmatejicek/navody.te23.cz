@@ -3,7 +3,7 @@ title: "Vytvoření vlastní šablony certifikátu pro doménové řadiče"
 date: "2025-05-15"
 tags: [PKI, Active Directory, Security]
 layout: post
-------------------------------------------------
+---
 
 ## Vytvoření vlastní šablony certifikátu pro doménové řadiče
 
