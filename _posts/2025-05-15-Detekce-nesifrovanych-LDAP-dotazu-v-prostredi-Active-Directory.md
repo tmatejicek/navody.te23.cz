@@ -1,6 +1,6 @@
 ---
 title: "Detekce nešifrovaných LDAP dotazů v prostředí Active Directory"
-date: "2025-05-15"
+date: 2025-05-15
 tags: [LDAP, Active Directory, Security]
 layout: post
 ---
@@ -94,8 +94,8 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Parameters" /v "LDAPServerI
 
 ## Shrnutí
 
-✅ Nešifrovaný LDAP představuje bezpečnostní riziko
-✅ Události 2887–2890 poskytují různé úrovně informací
-✅ Detailní logování lze zapnout přes registr nebo GPO
-✅ PowerShell pomáhá identifikovat konkrétní zařízení
+✅ Nešifrovaný LDAP představuje bezpečnostní riziko  
+✅ Události 2887–2890 poskytují různé úrovně informací  
+✅ Detailní logování lze zapnout přes registr nebo GPO  
+✅ PowerShell pomáhá identifikovat konkrétní zařízení  
 ✅ Nastavení LDAPServerIntegrity=2 zvyšuje bezpečnost, ale může přerušit kompatibilitu
