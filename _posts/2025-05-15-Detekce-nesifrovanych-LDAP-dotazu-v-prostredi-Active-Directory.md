@@ -3,7 +3,7 @@ title: "Detekce nešifrovaných LDAP dotazů v prostředí Active Directory"
 date: "2025-05-15"
 tags: [LDAP, Active Directory, Security]
 layout: post
--------------------------------------------------
+---
 
 ## Detekce nešifrovaných LDAP dotazů v prostředí Active Directory
 
