@@ -51,8 +51,7 @@ LDAP (Lightweight Directory Access Protocol) je často používán bez zabezpeč
 #### 3.1 Změna registru lokálně
 
 ```powershell
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "5 LDAP Interface Events" /t REG_DWORD /d 2 /f
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "16 LDAP logging" /t REG_DWORD /d 2 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "16 LDAP Interface Events" /t REG_DWORD /d 2 /f
 ```
 
 * Změny se obvykle projeví bez restartu, ale někdy je vhodné restartovat DC
