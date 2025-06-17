@@ -66,18 +66,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "16 LDAP In
 
 ### 4. Vyhodnocení událostí pomocí PowerShellu
 
-#### 4.1 Získání IP adres z eventů 2888 a 2889
-
-```powershell
-$events = Get-WinEvent -LogName "Directory Service" -FilterHashtable @{ Id = 2888, 2889; StartTime = (Get-Date).AddDays(-1) }
-$ips = $events | ForEach-Object { [regex]::Matches($_.Message, '\b\d{1,3}(\.\d{1,3}){3}\b') } | ForEach-Object { $_.Value } | Sort-Object -Unique
-$ips
-```
-
-* Identifikujeme nešifrované klienty
-* Můžeme přeložit IP na hostname pro snazší správu
-
-#### 4.2 Export unikátních IP, uživatelů a typů spojení z eventů 2889
+#### 4.1 Export unikátních IP, uživatelů a typů spojení z eventů 2889
 
 ```powershell
 Param (
