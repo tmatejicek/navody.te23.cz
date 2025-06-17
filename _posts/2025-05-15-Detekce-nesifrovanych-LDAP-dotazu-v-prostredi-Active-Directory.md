@@ -77,6 +77,60 @@ $ips
 * Identifikujeme nešifrované klienty
 * Můžeme přeložit IP na hostname pro snazší správu
 
+#### 4.2 Export unikátních IP, uživatelů a typů spojení z eventů 2889
+
+```powershell
+Param (
+    [Parameter(Mandatory = $false, Position = 0)]
+    [string]$ComputerName = "localhost",
+
+    [Parameter(Mandatory = $false, Position = 1)]
+    [int]$Hours = 24
+)
+
+$InsecureLDAPBinds = @()
+
+$StartTime = (Get-Date).AddHours(-$Hours)
+$Events = Get-WinEvent -ComputerName $ComputerName -FilterHashtable @{
+    LogName = 'Directory Service'
+    Id       = 2889
+    StartTime = $StartTime
+}
+
+foreach ($Event in $Events) {
+    try {
+        $eventXml = [xml]$Event.ToXml()
+        $EventData = $eventXml.Event.EventData.Data
+
+        $ClientInfo = $EventData[0]
+        $IPAddress = $ClientInfo.Substring(0, $ClientInfo.LastIndexOf(":"))
+        $User = $EventData[1]
+        $BindTypeCode = [int]$EventData[2]
+
+        switch ($BindTypeCode) {
+            0 { $BindType = "Unsigned" }
+            1 { $BindType = "Simple" }
+            default { $BindType = "Unknown" }
+        }
+
+        $Row = [PSCustomObject]@{
+            IPAddress = $IPAddress
+            User      = $User
+            BindType  = $BindType
+        }
+
+        $InsecureLDAPBinds += $Row
+    }
+    catch {
+        Write-Warning "Chyba při zpracování události: $_"
+    }
+}
+
+$UniqueBinds = $InsecureLDAPBinds | Sort-Object IPAddress, User, BindType -Unique
+$OutputFile = ".\InsecureLDAPBinds.csv"
+$UniqueBinds | Export-Csv -NoTypeInformation -Encoding UTF8 $OutputFile
+```
+
 ---
 
 ### 5. Prevence nešifrovaného LDAP
