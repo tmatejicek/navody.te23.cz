@@ -69,13 +69,8 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "16 LDAP In
 #### 4.1 Export unikátních IP, uživatelů a typů spojení z eventů 2889
 
 ```powershell
-Param (
-    [Parameter(Mandatory = $false, Position = 0)]
-    [string]$ComputerName = "localhost",
-
-    [Parameter(Mandatory = $false, Position = 1)]
-    [int]$Hours = 24
-)
+$ComputerName = "localhost"
+$Hours = 24
 
 $InsecureLDAPBinds = @()
 
