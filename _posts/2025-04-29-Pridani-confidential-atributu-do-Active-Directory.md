@@ -16,7 +16,6 @@ V tomto návodu si ukážeme, jak krok za krokem přidat vlastní atribut do Act
 ### 1.1 Co je potřeba připravit
 - 📌 Členství v **Schema Admins**.
 - 📌 Aktivní **povolení úprav schématu** (`Schema Update Allowed` v registru).
-- 📌 Validní **OID** pro nový atribut.
 
 #### Nastavení Schema Update Allowed v registru
 Pro povolení úprav schématu je nutné:
@@ -42,7 +41,8 @@ Schema Update Allowed
 ### 1.2 Definice atributu
 Použijeme hodnoty:
 - `attributeSyntax: 2.5.5.12` (Unicode string)
-- `oMSyntax: 64`
+- `attributeID: 1.2.840.113556.1.8000.2554.28570892.20250403.1` (OID musí být unikátní v rámci celého AD schématu)
+- `oMSyntax: 64` (Text)
 - `isSingleValued: TRUE`
 - `searchFlags: 128` (CONFIDENTIAL)
 
@@ -67,7 +67,7 @@ Atribut můžeme přidat dvěma způsoby:
 
 - ⚙ **Použitím nástroje ADSI Edit**:
   - Připojíme se na kontext **Schema**.
-  - Klikneme pravým tlačítkem na `CN=Attributes` > **New > Object**.
+  - Klikneme pravým tlačítkem na `CN=Schema` > **New > Object**.
   - Vybereme `attributeSchema` a vyplníme potřebné vlastnosti.
 
 - 📄 **Importem přes LDIF soubor**:
@@ -98,10 +98,7 @@ Postup v ADSI Edit:
 
 ## 3. Nastavení oprávnění ke čtení a zápisu
 
-### 3.1 Přístup přes ACL
-- 📌 Oprávnění nastavujeme na **objekty nebo OU**, ne na samotný atribut ve schématu.
-
-### 3.2 Nastavení oprávnění na celou doménu
+### 3.1 Nastavení oprávnění
 Použijeme nástroj `dsacls`.  
 Pro `CONFIDENTIAL` atribut je vhodné rozlišit:
 
@@ -132,6 +129,10 @@ dsacls "OU=Zamestnanci,DC=firma,DC=cz" /I:S /G "DOMENA\IT Team:WPCA;confidential
 ```powershell
 $user = Get-ADUser -Identity "testuser" -Properties confidentialAttribute
 $user | Select-Object SamAccountName, confidentialAttribute
+
+$r=(New-Object DirectoryServices.DirectorySearcher "sAMAccountName=testuser");$r.PropertiesToLoad.Add("confidentialAttribute")|Out-Null
+$p=$r.FindOne().Properties
+[pscustomobject]@{SamAccountName=$p.samaccountname[0];ConfidentialAttribute=$p.confidentialattribute[0]}
 ```
 
 ✅ Pokud máme práva, uvidíme hodnotu atributu.
