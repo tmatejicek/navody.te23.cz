@@ -110,9 +110,7 @@ foreach ($Event in $Events) {
     }
 }
 
-$UniqueBinds = $InsecureLDAPBinds | Sort-Object IPAddress, User, BindType -Unique
-$OutputFile = ".\InsecureLDAPBinds.csv"
-$UniqueBinds | Export-Csv -NoTypeInformation -Encoding UTF8 $OutputFile
+$InsecureLDAPBinds | Sort-Object IPAddress, User, BindType -Unique | ft
 ```
 
 ---
