@@ -64,7 +64,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "16 LDAP In
 
 ---
 
-### 4. Vyhodnocení událostí pomocí PowerShellu
+### 4. Vyhodnocení událostí
 
 #### 4.1 Export unikátních IP, uživatelů a typů spojení z eventů 2889
 
@@ -113,6 +113,36 @@ foreach ($Event in $Events) {
 $InsecureLDAPBinds | Sort-Object IPAddress, User, BindType -Unique | ft
 ```
 
+#### 4.2 Query pro Graylog
+
+Pokud události z logu `Directory Service` přenášíme do Graylogu pomocí Winlogbeatu a v Beats inputu ponecháme výchozí prefixování polí, můžeme si v Graylog Search připravit jednoduché dotazy pro rychlé vyhodnocení.
+
+Přehled všech relevantních LDAP událostí:
+
+```text
+winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:(2886 OR 2887 OR 2888 OR 2889 OR 2890)
+```
+
+Zaměření pouze na detailní události s klientskými informacemi:
+
+```text
+winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:2889
+```
+
+#### 4.3 Poznámka ke konfiguraci Winlogbeat
+
+Aby se tyto LDAP události do Graylogu vůbec dostaly, musí Winlogbeat na doménovém řadiči číst log `Directory Service` a filtrovat příslušná event ID:
+
+```yaml
+winlogbeat.event_logs:
+  - name: Directory Service
+    event_id: 2886, 2887, 2888, 2889, 2890
+```
+
+Současně musí být Winlogbeat nastavený na odesílání do Graylogu přes `output.logstash`. Kompletní příklad konfigurace a nastavení Beats inputu najdete v [samostatném článku o Winlogbeatu a Graylogu]({% post_url 2026-04-15-Nastaveni-Winlogbeat-pro-odesilani-Windows-event-logu-do-Graylogu %}).
+
+📌 Události `2888` a `2889` budou k dispozici až po zapnutí rozšířeného LDAP diagnostického logování podle kapitoly 3.
+
 ---
 
 ### 5. Prevence nešifrovaného LDAP
@@ -123,7 +153,7 @@ $InsecureLDAPBinds | Sort-Object IPAddress, User, BindType -Unique | ft
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Parameters" /v "LDAPServerIntegrity" /t REG_DWORD /d 2 /f
 ```
 
-* Všechny klienty je nutné předem otestovat ✅
+* Všechny klienty je nutné předem otestovat
 
 ---
 
@@ -132,5 +162,5 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Parameters" /v "LDAPServerI
 ✅ Nešifrovaný LDAP představuje bezpečnostní riziko  
 ✅ Události 2887–2890 poskytují různé úrovně informací  
 ✅ Detailní logování lze zapnout přes registr nebo GPO  
-✅ PowerShell pomáhá identifikovat konkrétní zařízení  
+✅ PowerShell i Graylog pomáhají identifikovat konkrétní zařízení a zdroje LDAP dotazů  
 ✅ Nastavení LDAPServerIntegrity=2 zvyšuje bezpečnost, ale může přerušit kompatibilitu
