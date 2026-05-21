@@ -277,13 +277,15 @@ Postup:
 2. Klikneme na `Create +` a vybereme `Aggregation`.
 3. V `Visualization` zvolíme `Data Table`.
 4. V `Group by Row` vybereme `winlogbeat_winlog_computer_name`.
-5. V `Metrics` přidáme `Count` a pole necháme prázdné.
-6. Volitelně ponecháme i automaticky přidané `Percentage`, pokud chceme vidět podíl jednotlivých počítačů.
-7. Widget uložíme do dashboardu.
+5. V `Metrics` přidáme `Latest Value`.
+6. Jako `Field` vybereme `winlogbeat_@timestamp`.
+7. Do `Name` můžeme zadat například `Poslední událost`.
+8. Volitelně přidáme i `Count`, pokud chceme vedle času vidět i počet zpráv.
+9. Widget uložíme do dashboardu.
 
 Výsledek:
 
-* seznam počítačů a počet zpráv od každého z nich
+* seznam počítačů a čas poslední přijaté události od každého z nich
 * rychlá kontrola, jestli některý server nebo stanice nepřestaly posílat logy
 
 Pokud chceme místo seznamu jen číslo, vytvoříme druhý widget `Single Number` a jako metriku zvolíme funkci pro unikátní počet hodnot nad `winlogbeat_winlog_computer_name`.
@@ -302,13 +304,15 @@ Postup:
 2. Klikneme na `Create +` a vybereme `Aggregation`.
 3. V `Visualization` zvolíme `Data Table`.
 4. V `Group by Row` vybereme `winlogbeat_winlog_event_data_TargetUserName`.
-5. V `Metrics` přidáme `Count` a pole necháme prázdné.
-6. Volitelně ponecháme i `Percentage`, pokud chceme vidět podíl jednotlivých uživatelů.
-7. Widget uložíme do dashboardu.
+5. V `Metrics` přidáme `Latest Value`.
+6. Jako `Field` vybereme `winlogbeat_@timestamp`.
+7. Do `Name` můžeme zadat například `Poslední přihlášení`.
+8. Volitelně přidáme i `Count`, pokud chceme vedle času vidět i počet logon událostí.
+9. Widget uložíme do dashboardu.
 
 Výsledek:
 
-* seznam uživatelů a počet odpovídajících logon událostí
+* seznam uživatelů a čas jejich posledního zachyceného přihlášení
 * rychlý přehled přihlašovací aktivity za posledních 24 hodin
 
 V praxi bývá vhodné odfiltrovat technické účty, `ANONYMOUS LOGON` a počítačové účty končící znakem `$`. Pokud chceme místo seznamu jen číslo, vytvoříme druhý widget `Single Number` a zvolíme metriku pro unikátní počet hodnot nad `winlogbeat_winlog_event_data_TargetUserName`.
