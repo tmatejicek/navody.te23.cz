@@ -88,18 +88,26 @@ Po úpravě změny uložíme.
 
 📌 V prostředí s několika málo streamy je často praktičtější vytvořit si správně hned konkrétní index sety přímo v `System / Indices`.
 
-#### 2.1 Praktické doporučení k retenci
+#### 2.1 Co nastavit prakticky
 
-Následující hodnoty nejsou pevné doporučení výrobce, ale praktický výchozí bod:
+Pokud organizace **nespadá pod ZoKB**:
 
-* logy z pracovních stanic: **14 až 30 dní**
-* logy ze serverů a síťových prvků: **30 dní**
-* bezpečnostně důležité logy z AD, PowerShellu nebo Sysmonu: **30 až 90 dní**
+* `windows-logs`: **30 dní**
+* `network-syslog`: **30 dní**
+* `security-events`: **90 dní**
 
-Prakticky:
+Pokud organizace spadá do **nižšího režimu** podle ZoKB:
 
-* držet kratší retenci pro běžné provozní logy
-* a delší retenci ponechat jen pro opravdu důležité zdroje
+* `windows-logs`: **30 dní**
+* `network-syslog`: **30 dní**
+* `security-events`: **12 měsíců**
+
+Pokud organizace spadá do **vyššího režimu** podle ZoKB:
+
+* `windows-logs`: **30 dní**
+* `network-syslog`: **30 dní**
+* `security-events`: **18 měsíců minimum**
+* `ad-security`: **18 měsíců minimum**
 
 ---
 
@@ -123,6 +131,7 @@ Alespoň pro menší prostředí dává smysl vytvořit například:
 
 * `windows-logs`
 * `network-syslog`
+* `security-events`
 * volitelně `ad-security`
 
 Praktický základ pro každý z nich:
@@ -139,8 +148,10 @@ Praktické mapování:
 
 * Windows logy -> index set `windows-logs`
 * síťové syslogy -> index set `network-syslog`
+* bezpečnostní logy -> index set `security-events`
 * bezpečnostní AD logy -> index set `ad-security`
 
+📌 Pokud organizace spadá do režimu vyšších povinností, je samostatný index set pro bezpečnostní logy prakticky nutnost.  
 📌 Pokud dáme všechna data do jednoho index setu, bude se hůř nastavovat retence, přehlednost i budoucí dashboardy.
 
 ---
@@ -202,6 +213,34 @@ Praktická pravidla:
 * pokud to zdroj podporuje, je spolehlivější **TCP** než **UDP**
 * input bez dokončeného **Input Setup Wizard** ještě není v plném provozu
 * stream a index set je lepší určit hned při vzniku inputu
+* bezpečnostní logy je vhodné směrovat do samostatného streamu s delší retencí
+
+#### 4.3 Jak oddělit bezpečnostní logy do delší retence
+
+Pokud chceme mít například běžné Windows logy na `30 dní`, ale bezpečnostní logy na `12` nebo `18 měsíců`, nestačí jen jeden společný stream.
+
+Praktický postup:
+
+1. vytvoříme běžný stream `Windows Event Logs` s index setem `windows-logs`
+2. pak vytvoříme další stream `Security Events`
+3. tomuto streamu přiřadíme index set `security-events`
+4. do streamu `Security Events` přidáme pravidla například pro:
+   * `winlogbeat_winlog_channel:"Security"`
+   * `winlogbeat_winlog_channel:"Microsoft-Windows-PowerShell/Operational"`
+   * `winlogbeat_winlog_channel:"Microsoft-Windows-Sysmon/Operational"`
+   * `winlogbeat_winlog_channel:"Directory Service"`
+
+Stream vytvoříme v:
+
+```text
+Streams
+```
+
+Tím získáme:
+
+* kratší retenci pro běžné provozní logy
+* delší retenci pro bezpečnostně důležité události
+* jednodušší dashboardy, alerty a oprávnění
 
 ---
 
@@ -337,8 +376,9 @@ Nakonec zkontrolujeme:
 * že je Data Node připojený
 * že journal neroste neobvykle rychle
 * že se v prostředí neobjevují dlouhodobé backlogy
+* že zdroje mají správně synchronizovaný čas
 
-To je důležité hlavně v prvních dnech po nasazení.
+To je důležité hlavně v prvních dnech po nasazení. U režimu vyšších povinností je navíc nepřetržitá synchronizace jednotného času technických aktiv výslovný požadavek vyhlášky.
 
 ---
 
@@ -347,6 +387,7 @@ To je důležité hlavně v prvních dnech po nasazení.
 ✅ Po instalaci je vhodné nejdřív nastavit `http_external_uri` a ověřit výslednou URL  
 ✅ Retenci a rotaci nastavujeme přímo přes `System / Indices`  
 ✅ Samostatné typy logů je lepší rozdělit do vlastních streamů a index setů  
+✅ Pro ZoKB dává smysl oddělit bezpečnostní logy do samostatného index setu  
 ✅ Každý input je potřeba nejen spustit, ale i dokončit v `Input Setup Wizard`  
 ✅ V Graylog Open je praktické počítat s jednoduchým modelem rolí a sdílení  
 ✅ SMTP a první provozní kontrolu je lepší udělat hned na začátku
