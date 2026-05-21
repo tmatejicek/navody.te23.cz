@@ -261,7 +261,7 @@ Doporučení:
 
 * `Last 24 hours`
 
-Na tento dashboard dává smysl dát jen několik věcí, které technik zkontroluje během pár minut.
+Na tento dashboard dává smysl dát jen několik widgetů, které technik zkontroluje během pár minut.
 
 #### 6.1 Počítače, které poslaly logy
 
@@ -271,17 +271,21 @@ Dotaz:
 _exists_:winlogbeat_winlog_computer_name
 ```
 
-Widget:
+Postup:
 
-* **Data Table** seskupená podle `winlogbeat_winlog_computer_name` - zobrazí seznam počítačů a počet zpráv od každého z nich
-* případně druhý widget **Single Number** s metrikou pro unikátní počet hodnot nad `winlogbeat_winlog_computer_name` - zobrazí počet unikátních počítačů
+1. V `Search` vložíme dotaz výše.
+2. Klikneme na `Create +` a vybereme `Aggregation`.
+3. V `Visualization` zvolíme `Data Table`.
+4. V `Group by Row` vybereme `winlogbeat_winlog_computer_name`.
+5. V `Metric` nastavíme `count()`.
+6. Widget uložíme do dashboardu.
 
-K čemu:
+Výsledek:
 
-* rychle ukáže, které počítače ve zvoleném čase poslaly alespoň jeden log
-* pomůže odhalit neaktivní nebo chybějící zdroje logů
+* seznam počítačů a počet zpráv od každého z nich
+* rychlá kontrola, jestli některý server nebo stanice nepřestaly posílat logy
 
-📌 Nejde o seznam právě zapnutých počítačů. Jde o počítače, ze kterých v daném čase přišly logy.
+Pokud chceme místo seznamu jen číslo, vytvoříme druhý widget `Single Number` a jako metriku zvolíme funkci pro unikátní počet hodnot nad `winlogbeat_winlog_computer_name`.
 
 #### 6.2 Uživatelé s úspěšným přihlášením
 
@@ -291,17 +295,21 @@ Dotaz:
 winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4624
 ```
 
-Widget:
+Postup:
 
-* **Data Table** seskupená podle `winlogbeat_winlog_event_data_TargetUserName` - zobrazí seznam uživatelů a počet odpovídajících logon událostí
-* případně druhý widget **Single Number** s metrikou pro unikátní počet hodnot nad `winlogbeat_winlog_event_data_TargetUserName` - zobrazí počet unikátních uživatelů
+1. V `Search` vložíme dotaz výše.
+2. Klikneme na `Create +` a vybereme `Aggregation`.
+3. V `Visualization` zvolíme `Data Table`.
+4. V `Group by Row` vybereme `winlogbeat_winlog_event_data_TargetUserName`.
+5. V `Metric` nastavíme `count()`.
+6. Widget uložíme do dashboardu.
 
-K čemu:
+Výsledek:
 
-* rychlý přehled, kdo měl v prostředí v posledních hodinách nebo dnech úspěšné přihlášení
-* užitečné při ranní kontrole i při dohledávání podezřelé aktivity
+* seznam uživatelů a počet odpovídajících logon událostí
+* rychlý přehled přihlašovací aktivity za posledních 24 hodin
 
-📌 V praxi bývá vhodné odfiltrovat technické účty, `ANONYMOUS LOGON` a počítačové účty končící znakem `$`.
+V praxi bývá vhodné odfiltrovat technické účty, `ANONYMOUS LOGON` a počítačové účty končící znakem `$`. Pokud chceme místo seznamu jen číslo, vytvoříme druhý widget `Single Number` a zvolíme metriku pro unikátní počet hodnot nad `winlogbeat_winlog_event_data_TargetUserName`.
 
 #### 6.3 Počet neúspěšných přihlášení
 
@@ -311,14 +319,17 @@ Dotaz:
 winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4625
 ```
 
-Widget:
+Postup:
 
-* **Single Number**
-* metrika `count()`
+1. V `Search` vložíme dotaz výše.
+2. Klikneme na `Create +` a vybereme `Aggregation`.
+3. V `Visualization` zvolíme `Single Number`.
+4. V `Metric` nastavíme `count()`.
+5. Widget uložíme do dashboardu.
 
-K čemu:
+Výsledek:
 
-* rychle ukáže, jestli v posledních 24 hodinách nevyskočil počet chybných přihlášení
+* jedno číslo, které rychle ukáže, jestli v posledních 24 hodinách nevyskočil počet chybných přihlášení
 
 #### 6.4 Trend neúspěšných přihlášení
 
@@ -328,15 +339,18 @@ Dotaz:
 winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4625
 ```
 
-Widget:
+Postup:
 
-* **Line Chart**
-* metrika `count()`
-* seskupení podle `timestamp`
+1. V `Search` vložíme dotaz výše.
+2. Klikneme na `Create +` a vybereme `Aggregation`.
+3. V `Visualization` zvolíme `Line Chart`.
+4. V `Group by Row` vybereme `timestamp`.
+5. V `Metric` nastavíme `count()`.
+6. Widget uložíme do dashboardu.
 
-K čemu:
+Výsledek:
 
-* ukáže, jestli jde o ojedinělý problém, nebo o soustavný nárůst
+* graf, který ukáže, jestli jde o ojedinělý problém, nebo o soustavný nárůst
 
 #### 6.5 Poslední PowerShell 4104 události
 
@@ -346,20 +360,16 @@ Dotaz:
 winlogbeat_winlog_channel:"Microsoft-Windows-PowerShell/Operational" AND winlogbeat_event_code:4104
 ```
 
-Widget:
+Postup:
 
-* **Message Table**
+1. V `Search` vložíme dotaz výše.
+2. Klikneme na `Create +` a vybereme `Message Table`.
+3. V tabulce ponecháme nebo doplníme sloupce `timestamp`, `winlogbeat_winlog_computer_name`, `winlogbeat_event_code` a `message`.
+4. Widget uložíme do dashboardu.
 
-Doporučené sloupce:
+Výsledek:
 
-* timestamp
-* `winlogbeat_winlog_computer_name`
-* `winlogbeat_event_code`
-* message
-
-K čemu:
-
-* rychlá kontrola, zda se v prostředí neobjevily nové PowerShell script block události
+* poslední PowerShell script block události na jednom místě
 
 #### 6.6 LDAP 2889 za posledních 24 hodin
 
@@ -369,14 +379,24 @@ Dotaz:
 winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:2889
 ```
 
-Widget:
+Postup pro rychlý přehled:
 
-* **Single Number**
-* nebo **Message Table**
+1. V `Search` vložíme dotaz výše.
+2. Klikneme na `Create +` a vybereme `Aggregation`.
+3. V `Visualization` zvolíme `Single Number`.
+4. V `Metric` nastavíme `count()`.
+5. Widget uložíme do dashboardu.
 
-K čemu:
+Postup pro detail:
 
-* rychlá kontrola, zda se stále objevují nešifrované LDAP dotazy
+1. Nad stejným dotazem klikneme na `Create +` a vybereme `Message Table`.
+2. V tabulce ponecháme hlavně `timestamp`, `winlogbeat_winlog_computer_name` a `message`.
+3. Widget uložíme do dashboardu.
+
+Výsledek:
+
+* jedno číslo pro rychlou kontrolu
+* jedna tabulka pro dohledání konkrétních LDAP klientů
 
 #### 6.7 Poslední důležité síťové události
 
@@ -386,11 +406,14 @@ Dotaz:
 (source:mikrotik01 OR source:unifi-gateway01 OR source:unifi-switch01 OR source:unifi-ap01) AND (error OR critical OR disconnect* OR wan OR uplink)
 ```
 
-Widget:
+Postup:
 
-* **Message Table**
+1. V `Search` vložíme dotaz výše.
+2. Klikneme na `Create +` a vybereme `Message Table`.
+3. V tabulce ponecháme hlavně `timestamp`, `source` a `message`.
+4. Widget uložíme do dashboardu.
 
-K čemu:
+Výsledek:
 
 * rychlý přehled síťových problémů bez nutnosti ručně procházet každý zdroj zvlášť
 
