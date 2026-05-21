@@ -11,7 +11,7 @@ Tento článek je určený pro techniky, kteří už mají Graylog v organizaci 
 
 Pokud Graylog teprve nasazujete, navazuje tento článek na [Instalaci Graylog Open na Debianu 12]({% post_url 2026-04-15-Instalace-Graylog-Open-na-Debianu-12-dvouserverove-reseni %}) a na [nastavení Winlogbeatu pro odesílání logů do Graylogu]({% post_url 2026-04-15-Nastaveni-Winlogbeat-pro-odesilani-Windows-event-logu-do-Graylogu %}).
 
-📌 V příkladech níže předpokládáme, že v Graylogu používáme **výchozí prefixování polí** v Beats inputu. Proto pracujeme s poli jako `winlogbeat_source`, `winlogbeat_winlog_channel` nebo `winlogbeat_event_code`.
+📌 V příkladech níže předpokládáme, že v Graylogu používáme **výchozí prefixování polí** v Beats inputu. Proto pracujeme s poli jako `winlogbeat_winlog_computer_name`, `winlogbeat_winlog_channel` nebo `winlogbeat_event_code`.
 
 ---
 
@@ -103,7 +103,7 @@ error
 * hledání podle pole:
 
 ```text
-winlogbeat_source:SERVER01
+winlogbeat_winlog_computer_name:SERVER01
 ```
 
 * přesná fráze v uvozovkách:
@@ -115,7 +115,7 @@ winlogbeat_winlog_channel:"Directory Service"
 * kombinace podmínek:
 
 ```text
-winlogbeat_source:SERVER01 AND winlogbeat_event_code:4625
+winlogbeat_winlog_computer_name:SERVER01 AND winlogbeat_event_code:4625
 ```
 
 * více možností:
@@ -127,7 +127,7 @@ winlogbeat_event_code:(4624 OR 4625)
 * vyloučení:
 
 ```text
-winlogbeat_winlog_channel:"Security" NOT winlogbeat_source:TESTPC01
+winlogbeat_winlog_channel:"Security" NOT winlogbeat_winlog_computer_name:TESTPC01
 ```
 
 📌 Operátory `AND`, `OR` a `NOT` je vhodné psát velkými písmeny.  
@@ -142,7 +142,7 @@ Níže jsou příklady dotazů, které dávají smysl v prostředí, kde do Gray
 #### 7.1 Logy z konkrétního počítače
 
 ```text
-winlogbeat_source:SERVER01
+winlogbeat_winlog_computer_name:SERVER01
 ```
 
 Použijeme, když řešíme konkrétní server nebo stanici.
@@ -190,7 +190,7 @@ Tento dotaz je vhodný například pro dohledání nešifrovaných LDAP dotazů.
 #### 7.7 Kombinace počítače a event ID
 
 ```text
-winlogbeat_source:DC01 AND winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:2889
+winlogbeat_winlog_computer_name:DC01 AND winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:2889
 ```
 
 Tohle je typický příklad dotazu, který už řeší velmi konkrétní situaci.
@@ -218,7 +218,7 @@ Praktický postup:
 
 Například:
 
-* z `winlogbeat_source` dohledáme další události z téhož serveru
+* z `winlogbeat_winlog_computer_name` dohledáme další události z téhož serveru
 * z `winlogbeat_event_code` rozšíříme hledání na stejný typ událostí
 * z textu zprávy nebo z uživatele dohledáme související aktivitu
 
@@ -270,6 +270,6 @@ Příklady typických problémů:
 
 ✅ Pro běžného technika je nejdůležitější část Graylogu záložka **Search**  
 ✅ Nejdřív vždy kontrolujeme **časové okno**, potom **stream** a teprve pak samotný dotaz  
-✅ Při práci s Windows logy se vyplatí znát hlavně pole `winlogbeat_source`, `winlogbeat_winlog_channel` a `winlogbeat_event_code`  
+✅ Při práci s Windows logy se vyplatí znát hlavně pole `winlogbeat_winlog_computer_name`, `winlogbeat_winlog_channel` a `winlogbeat_event_code`  
 ✅ Praktická práce v Graylogu stojí hlavně na jednoduchých opakovatelných dotazech  
 ✅ Detail jedné zprávy bývá nejlepší výchozí bod pro další analýzu

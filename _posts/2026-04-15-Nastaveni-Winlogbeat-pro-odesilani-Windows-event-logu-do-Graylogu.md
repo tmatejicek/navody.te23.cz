@@ -60,7 +60,7 @@ Pro běžný provoz většinou stačí:
 * volitelně zapnout **TCP keepalive**
 * ponechat výchozí pojmenování polí z Beats
 
-📌 Pokud v inputu ponecháme výchozí chování prefixů, budeme v Graylogu typicky vidět pole jako `winlogbeat_source`, `winlogbeat_winlog_channel`, `winlogbeat_event_code` a podobně.
+📌 Pokud v inputu ponecháme výchozí chování prefixů, budeme v Graylogu typicky vidět pole jako `winlogbeat_winlog_computer_name`, `winlogbeat_winlog_channel`, `winlogbeat_event_code` a podobně.
 
 Po spuštění inputu zkontrolujeme, že opravdu běží na správném portu a správném uzlu.
 
@@ -199,7 +199,7 @@ V detailu inputu nebo v přehledu **Inputs** sledujeme, zda přibývají přijat
 Pokud jsme ponechali výchozí prefixování polí, můžeme při hledání využít například pole:
 
 ```text
-winlogbeat_source
+winlogbeat_winlog_computer_name
 ```
 
 nebo:

@@ -152,7 +152,7 @@ Hyper-V hosty - chyby a varování
 Pokud do Graylogu posíláme z Hyper-V hostů alespoň standardní `Application` a `System` logy, může být praktické například toto hledání:
 
 ```text
-winlogbeat_source:(HV01 OR HV02) AND (winlogbeat_winlog_channel:"System" OR winlogbeat_winlog_channel:"Application") AND (error OR fail* OR critical)
+winlogbeat_winlog_computer_name:(HV01 OR HV02) AND (winlogbeat_winlog_channel:"System" OR winlogbeat_winlog_channel:"Application") AND (error OR fail* OR critical)
 ```
 
 K čemu se hodí:
@@ -218,7 +218,7 @@ Microsoft DHCP události za 24h
 Pokud máme DHCP server například `DHCP01`, může být praktické toto hledání:
 
 ```text
-winlogbeat_source:DHCP01 AND (winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Admin" OR winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Operational")
+winlogbeat_winlog_computer_name:DHCP01 AND (winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Admin" OR winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Operational")
 ```
 
 K čemu se hodí:
@@ -257,42 +257,35 @@ Doporučení:
 
 ### 6. Praktický dashboard č. 1 - Ranní kontrola infrastruktury
 
-Tohle je nejdůležitější dashboard pro běžný provoz. Technik si ho otevře ráno a během několika minut ví, jestli se děje něco mimořádného.
-
-Časové okno dashboardu:
+Časové okno:
 
 * `Last 24 hours`
 
-Právě tady dávají největší smysl widgety, které ukážou, **které počítače opravdu poslaly logy** a **kteří uživatelé se podle logů přihlašovali**. Je ale potřeba je správně postavit: samotný dotaz vybírá zprávy a teprve agregace widgetu z nich udělá seznam nebo počet unikátních hodnot.
-
-Doporučené widgety:
+Na tento dashboard dává smysl dát jen několik věcí, které technik zkontroluje během pár minut.
 
 #### 6.1 Počítače, které poslaly logy
 
-Zdrojový dotaz pro widget:
+Dotaz:
 
 ```text
-winlogbeat_source:*
+_exists_:winlogbeat_winlog_computer_name
 ```
 
 Widget:
 
-* **Data Table** seskupená podle `winlogbeat_source` - zobrazí seznam počítačů a počet zpráv od každého z nich
-* případně druhý widget **Single Number** s metrikou pro unikátní počet hodnot nad `winlogbeat_source` - zobrazí počet unikátních počítačů
+* **Data Table** seskupená podle `winlogbeat_winlog_computer_name` - zobrazí seznam počítačů a počet zpráv od každého z nich
+* případně druhý widget **Single Number** s metrikou pro unikátní počet hodnot nad `winlogbeat_winlog_computer_name` - zobrazí počet unikátních počítačů
 
-📌 Samotný dotaz `winlogbeat_source:*` vybírá všechny zprávy, které mají pole `winlogbeat_source`. Seznam nebo počet počítačů vznikne až díky agregaci widgetu nad tímto polem. Pokud chceme rychlou cestu, můžeme v Graylogu použít akci `Show Top Values`, která takový `Data Table` widget vytvoří.
-
-Smysl:
+K čemu:
 
 * rychle ukáže, které počítače ve zvoleném čase poslaly alespoň jeden log
 * pomůže odhalit neaktivní nebo chybějící zdroje logů
 
-📌 Tento widget neříká, že je počítač právě zapnutý nebo že je na něm někdo přihlášený. Pouze potvrzuje, že z něj ve zvoleném časovém okně přišla data.  
-📌 Tento přehled většinou není potřeba ukládat jako samostatný saved search. V praxi bývá praktičtější vytvořit ho rovnou jako widget na dashboardu.
+📌 Nejde o seznam právě zapnutých počítačů. Jde o počítače, ze kterých v daném čase přišly logy.
 
 #### 6.2 Uživatelé s úspěšným přihlášením
 
-Zdrojový dotaz pro widget:
+Dotaz:
 
 ```text
 winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4624
@@ -303,20 +296,16 @@ Widget:
 * **Data Table** seskupená podle `winlogbeat_winlog_event_data_TargetUserName` - zobrazí seznam uživatelů a počet odpovídajících logon událostí
 * případně druhý widget **Single Number** s metrikou pro unikátní počet hodnot nad `winlogbeat_winlog_event_data_TargetUserName` - zobrazí počet unikátních uživatelů
 
-📌 Samotný dotaz výše vybírá všechny události `4624`. Seznam nebo počet uživatelů vznikne až agregací nad polem `winlogbeat_winlog_event_data_TargetUserName`. I tady lze použít akci `Show Top Values`, výsledkem ale bude opět `Data Table`.
-
-Smysl:
+K čemu:
 
 * rychlý přehled, kdo měl v prostředí v posledních hodinách nebo dnech úspěšné přihlášení
 * užitečné při ranní kontrole i při dohledávání podezřelé aktivity
 
-📌 Ani tady nejde o seznam uživatelů, kteří jsou právě teď přihlášení. Jde o uživatele, u kterých se v daném časovém okně objevila událost `4624`.  
-📌 V některých prostředích dává smysl z tohoto widgetu odfiltrovat technické účty, `ANONYMOUS LOGON` nebo počítačové účty končící znakem `$`.  
-📌 Stejně jako u aktivních počítačů jde obvykle spíš o widget než o saved search.
+📌 V praxi bývá vhodné odfiltrovat technické účty, `ANONYMOUS LOGON` a počítačové účty končící znakem `$`.
 
 #### 6.3 Počet neúspěšných přihlášení
 
-Saved search:
+Dotaz:
 
 ```text
 winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4625
@@ -327,9 +316,17 @@ Widget:
 * **Single Number**
 * metrika `count()`
 
+K čemu:
+
+* rychle ukáže, jestli v posledních 24 hodinách nevyskočil počet chybných přihlášení
+
 #### 6.4 Trend neúspěšných přihlášení
 
-Stejný dotaz jako výše.
+Dotaz:
+
+```text
+winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4625
+```
 
 Widget:
 
@@ -337,13 +334,13 @@ Widget:
 * metrika `count()`
 * seskupení podle `timestamp`
 
-Smysl:
+K čemu:
 
 * ukáže, jestli jde o ojedinělý problém, nebo o soustavný nárůst
 
 #### 6.5 Poslední PowerShell 4104 události
 
-Saved search:
+Dotaz:
 
 ```text
 winlogbeat_winlog_channel:"Microsoft-Windows-PowerShell/Operational" AND winlogbeat_event_code:4104
@@ -356,13 +353,17 @@ Widget:
 Doporučené sloupce:
 
 * timestamp
-* `winlogbeat_source`
+* `winlogbeat_winlog_computer_name`
 * `winlogbeat_event_code`
 * message
 
+K čemu:
+
+* rychlá kontrola, zda se v prostředí neobjevily nové PowerShell script block události
+
 #### 6.6 LDAP 2889 za posledních 24 hodin
 
-Saved search:
+Dotaz:
 
 ```text
 winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:2889
@@ -373,9 +374,13 @@ Widget:
 * **Single Number**
 * nebo **Message Table**
 
+K čemu:
+
+* rychlá kontrola, zda se stále objevují nešifrované LDAP dotazy
+
 #### 6.7 Poslední důležité síťové události
 
-Saved search:
+Dotaz:
 
 ```text
 (source:mikrotik01 OR source:unifi-gateway01 OR source:unifi-switch01 OR source:unifi-ap01) AND (error OR critical OR disconnect* OR wan OR uplink)
@@ -385,7 +390,7 @@ Widget:
 
 * **Message Table**
 
-Smysl:
+K čemu:
 
 * rychlý přehled síťových problémů bez nutnosti ručně procházet každý zdroj zvlášť
 
@@ -401,7 +406,7 @@ Tento dashboard se hodí, pokud chceme mít bokem samostatný pohled na doménov
 
 Doporučené widgety:
 
-* **Data Table** seskupená podle `winlogbeat_source` pro event `4625`
+* **Data Table** seskupená podle `winlogbeat_winlog_computer_name` pro event `4625`
 * **Message Table** pro `2889`
 * **Line Chart** pro `4104`
 * **Message Table** pro logy z doménových řadičů s filtrem na konkrétní servery
@@ -409,7 +414,7 @@ Doporučené widgety:
 Příklad dotazu:
 
 ```text
-winlogbeat_source:(DC01 OR DC02) AND (winlogbeat_event_code:4625 OR winlogbeat_event_code:2889 OR winlogbeat_event_code:4104)
+winlogbeat_winlog_computer_name:(DC01 OR DC02) AND (winlogbeat_event_code:4625 OR winlogbeat_event_code:2889 OR winlogbeat_event_code:4104)
 ```
 
 Tento dashboard je vhodný, když:
@@ -436,7 +441,7 @@ Doporučené widgety:
 Příklad pro Hyper-V:
 
 ```text
-winlogbeat_source:(HV01 OR HV02) AND (winlogbeat_winlog_channel:"System" OR winlogbeat_winlog_channel:"Application") AND (error OR fail* OR critical)
+winlogbeat_winlog_computer_name:(HV01 OR HV02) AND (winlogbeat_winlog_channel:"System" OR winlogbeat_winlog_channel:"Application") AND (error OR fail* OR critical)
 ```
 
 Příklad pro síť:
@@ -448,7 +453,7 @@ source:(mikrotik01 OR unifi-gateway01 OR unifi-switch01 OR unifi-ap01) AND (erro
 Příklad pro Microsoft DHCP:
 
 ```text
-winlogbeat_source:DHCP01 AND (winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Admin" OR winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Operational")
+winlogbeat_winlog_computer_name:DHCP01 AND (winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Admin" OR winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Operational")
 ```
 
 📌 U menší organizace je často praktičtější mít tento dashboard jednodušší. Není nutné se snažit zobrazit všechno najednou.
@@ -496,5 +501,5 @@ Pokud více techniků sdílí stejný Graylog, dává smysl dashboardy a saved s
 ✅ Saved searches jsou nejlepší základ pro opakovanou práci v Graylogu  
 ✅ Dashboard má sloužit hlavně pro rychlou orientaci, ne pro detailní šetření  
 ✅ Pro menší organizaci obvykle stačí jeden ranní dashboard a několik specializovaných pohledů  
-✅ U Windows logů se opíráme hlavně o `winlogbeat_source`, `winlogbeat_winlog_channel` a `winlogbeat_event_code`  
+✅ U Windows logů se opíráme hlavně o `winlogbeat_winlog_computer_name`, `winlogbeat_winlog_channel` a `winlogbeat_event_code`  
 ✅ U MikroTiku a UniFi je praktické začít přes `source` a `message` a query doladit podle reálných logů
