@@ -70,19 +70,19 @@ Pro menší nebo střední on-premise prostředí v Graylog Open dává smysl zk
 * **Max. Number of Segments**: `1`
 * **Field type refresh interval**: `5 minutes`
 
-V části **Rotation & Retention** zkontrolujeme, jaká strategie je nastavená. Aktuální dokumentace uvádí jako doporučenou moderní volbu:
+V části **Rotation & Retention** zkontrolujeme, jaká strategie je nastavená.
 
-* **Index Time Size Optimizing**
+Prakticky nastavíme:
 
-U retence zkontrolujeme:
-
-* jaká retenční strategie je nastavená
-* jestli odpovídá kapacitě disků na Data Node
-* jestli odpovídá interním požadavkům organizace
-
-Pro Graylog Open obvykle dává smysl:
-
+* **Rotation strategy**: `Index Time Size Optimizing`
 * **Retention strategy**: `Delete`
+
+Ve formuláři pak pracujeme hlavně s položkami:
+
+* **Min. in storage**
+* **Max. in storage**
+
+Pro jednoduché on-premise prostředí je praktické nastavit do obou polí stejnou hodnotu. Tím dostaneme přímo cílovou dobu uchování daného index setu.
 
 Po úpravě změny uložíme.
 
@@ -92,21 +92,21 @@ Po úpravě změny uložíme.
 
 Pokud organizace **nespadá pod ZoKB**:
 
-* `windows-log`: **30 dní**
-* `network-syslog`: **30 dní**
-* `server-logs`: **90 dní**
+* `windows-log`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
+* `network-syslog`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
+* `server-logs`: `Min. in storage = 90 dní`, `Max. in storage = 90 dní`
 
 Pokud organizace spadá do **nižšího režimu** podle ZoKB:
 
-* `windows-log`: **30 dní**
-* `network-syslog`: **30 dní**
-* `server-logs`: **12 měsíců**
+* `windows-log`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
+* `network-syslog`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
+* `server-logs`: `Min. in storage = 12 měsíců`, `Max. in storage = 12 měsíců`
 
 Pokud organizace spadá do **vyššího režimu** podle ZoKB:
 
-* `windows-log`: **30 dní**
-* `network-syslog`: **30 dní**
-* `server-logs`: **18 měsíců minimum**
+* `windows-log`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
+* `network-syslog`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
+* `server-logs`: `Min. in storage = 18 měsíců`, `Max. in storage = 18 měsíců`
 
 ---
 
@@ -386,7 +386,7 @@ To je důležité hlavně v prvních dnech po nasazení. U režimu vyšších po
 ✅ Po instalaci je vhodné nejdřív nastavit `http_external_uri` a ověřit výslednou URL  
 ✅ Retenci a rotaci nastavujeme přímo přes `System / Indices`  
 ✅ Samostatné typy logů je lepší rozdělit do vlastních streamů a index setů  
-✅ Pro ZoKB dává smysl oddělit bezpečnostní logy do samostatného index setu  
+✅ Pro ZoKB dává smysl mít delší retenci v index setu `server-logs`  
 ✅ Každý input je potřeba nejen spustit, ale i dokončit v `Input Setup Wizard`  
 ✅ V Graylog Open je praktické počítat s jednoduchým modelem rolí a sdílení  
 ✅ SMTP a první provozní kontrolu je lepší udělat hned na začátku
