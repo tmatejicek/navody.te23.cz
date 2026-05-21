@@ -86,19 +86,7 @@ Pro Graylog Open obvykle dává smysl:
 
 Po úpravě změny uložíme.
 
-📌 V některých verzích nebo variantách UI existuje ještě:
-
-```text
-System / Configurations / Index Set Defaults
-```
-
-Pokud tuhle položku v UI nevidíš, není to problém. Pro běžné praktické nastavení úplně stačí upravovat nebo vytvářet index sety přímo v:
-
-```text
-System / Indices
-```
-
-📌 V prostředí s několika málo streamy je často praktičtější vytvořit si správně hned konkrétní index sety než řešit globální defaults.
+📌 V prostředí s několika málo streamy je často praktičtější vytvořit si správně hned konkrétní index sety přímo v `System / Indices`.
 
 #### 2.1 Praktické doporučení k retenci
 
@@ -357,7 +345,7 @@ To je důležité hlavně v prvních dnech po nasazení.
 ## Shrnutí
 
 ✅ Po instalaci je vhodné nejdřív nastavit `http_external_uri` a ověřit výslednou URL  
-✅ Retenci a rotaci nastavujeme prakticky hlavně přes `System / Indices`, případně podle verze i přes `Index Set Defaults`  
+✅ Retenci a rotaci nastavujeme přímo přes `System / Indices`  
 ✅ Samostatné typy logů je lepší rozdělit do vlastních streamů a index setů  
 ✅ Každý input je potřeba nejen spustit, ale i dokončit v `Input Setup Wizard`  
 ✅ V Graylog Open je praktické počítat s jednoduchým modelem rolí a sdílení  
