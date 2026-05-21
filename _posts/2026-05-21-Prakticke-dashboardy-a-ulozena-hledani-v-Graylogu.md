@@ -238,9 +238,51 @@ Tohle je nejdůležitější dashboard pro běžný provoz. Technik si ho otevř
 
 * `Last 24 hours`
 
+Právě tady dávají největší smysl widgety typu **aktivní počítače** a **aktivní uživatelé**, protože rychle ukážou, jestli prostředí „žije“ očekávaným způsobem.
+
 Doporučené widgety:
 
-#### 6.1 Počet neúspěšných přihlášení
+#### 6.1 Aktivní Windows počítače
+
+Zdrojový dotaz pro widget:
+
+```text
+winlogbeat_source:*
+```
+
+Widget:
+
+* **Top values** nad `winlogbeat_source`
+* případně **Single Number** s počtem unikátních počítačů
+
+Smysl:
+
+* rychle ukáže, které počítače v poslední době posílaly logy
+* pomůže odhalit neaktivní nebo chybějící zdroje logů
+
+Tento přehled většinou není potřeba ukládat jako samostatný saved search. V praxi bývá praktičtější vytvořit ho rovnou jako widget na dashboardu.
+
+#### 6.2 Aktivní uživatelé
+
+Zdrojový dotaz pro widget:
+
+```text
+winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4624
+```
+
+Widget:
+
+* **Top values** nad `winlogbeat_winlog_event_data_TargetUserName`
+
+Smysl:
+
+* rychlý přehled, kdo se v prostředí v posledních hodinách nebo dnech přihlašoval
+* užitečné při ranní kontrole i při dohledávání podezřelé aktivity
+
+📌 V některých prostředích dává smysl z tohoto widgetu odfiltrovat technické účty, `ANONYMOUS LOGON` nebo počítačové účty končící znakem `$`.  
+📌 Stejně jako u aktivních počítačů jde obvykle spíš o widget než o saved search.
+
+#### 6.3 Počet neúspěšných přihlášení
 
 Saved search:
 
@@ -253,7 +295,7 @@ Widget:
 * **Single Number**
 * metrika `count()`
 
-#### 6.2 Trend neúspěšných přihlášení
+#### 6.4 Trend neúspěšných přihlášení
 
 Stejný dotaz jako výše.
 
@@ -266,7 +308,7 @@ Smysl:
 
 * ukáže, jestli jde o ojedinělý problém, nebo o soustavný nárůst
 
-#### 6.3 Poslední PowerShell 4104 události
+#### 6.5 Poslední PowerShell 4104 události
 
 Saved search:
 
@@ -285,7 +327,7 @@ Doporučené sloupce:
 * `winlogbeat_event_code`
 * message
 
-#### 6.4 LDAP 2889 za posledních 24 hodin
+#### 6.6 LDAP 2889 za posledních 24 hodin
 
 Saved search:
 
@@ -298,7 +340,7 @@ Widget:
 * **Single Number**
 * nebo **Message Table**
 
-#### 6.5 Poslední důležité síťové události
+#### 6.7 Poslední důležité síťové události
 
 Saved search:
 
