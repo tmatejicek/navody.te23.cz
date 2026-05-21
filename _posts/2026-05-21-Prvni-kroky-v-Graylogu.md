@@ -1,11 +1,11 @@
 ---
-title: "První kroky v Graylogu pro IT techniky"
+title: "První kroky v Graylogu"
 date: 2026-05-21
 tags: [Graylog, Logging, Monitoring, Windows]
 layout: post
 ---
 
-## První kroky v Graylogu pro IT techniky
+## První kroky v Graylogu
 
 Tento článek je určený pro techniky, kteří už mají Graylog v organizaci nasazený a potřebují se rychle zorientovat v běžné práci s logy. Neřešíme zde instalaci, ale hlavně to, **kde hledat**, **jak psát dotazy** a **jak z výsledků vytěžit užitečné informace**.
 
@@ -135,7 +135,7 @@ winlogbeat_winlog_channel:"Security" NOT winlogbeat_source:TESTPC01
 
 ---
 
-### 7. Praktické dotazy pro naši instalaci
+### 7. Praktické dotazy
 
 Níže jsou příklady dotazů, které dávají smysl v prostředí, kde do Graylogu posíláme Windows logy přes Winlogbeat.
 
