@@ -15,9 +15,9 @@ Pokud Graylog teprve nasazujete, navazuje tento článek na [Instalaci Graylog O
 
 ---
 
-### 1. K čemu Graylog v našem prostředí slouží
+### 1. K čemu Graylog slouží
 
-V našem prostředí Graylog funguje jako centrální místo pro:
+Graylog funguje jako centrální místo pro:
 
 * vyhledávání Windows Event Logů
 * analýzu Sysmon událostí
@@ -270,6 +270,6 @@ Příklady typických problémů:
 
 ✅ Pro běžného technika je nejdůležitější část Graylogu záložka **Search**  
 ✅ Nejdřív vždy kontrolujeme **časové okno**, potom **stream** a teprve pak samotný dotaz  
-✅ V našem prostředí se vyplatí znát hlavně pole `winlogbeat_source`, `winlogbeat_winlog_channel` a `winlogbeat_event_code`  
+✅ Při práci s Windows logy se vyplatí znát hlavně pole `winlogbeat_source`, `winlogbeat_winlog_channel` a `winlogbeat_event_code`  
 ✅ Praktická práce v Graylogu stojí hlavně na jednoduchých opakovatelných dotazech  
 ✅ Detail jedné zprávy bývá nejlepší výchozí bod pro další analýzu
