@@ -207,6 +207,29 @@ K čemu se hodí:
 
 📌 U MikroTiku a UniFi je vhodné nejdřív v Search stránce ručně projít několik reálných zpráv a podle nich si doladit konkrétní textové výrazy v query.
 
+#### 4.7 Microsoft DHCP - administrace a provoz
+
+Doporučený název saved search:
+
+```text
+Microsoft DHCP události za 24h
+```
+
+Pokud máme DHCP server například `DHCP01`, může být praktické toto hledání:
+
+```text
+winlogbeat_source:DHCP01 AND (winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Admin" OR winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Operational")
+```
+
+K čemu se hodí:
+
+* změny scope, option a dalších DHCP nastavení
+* kontrola startu a chyb DHCP služby
+* dohledání stavových změn u DHCP failoveru
+
+📌 Na DHCP serverech bývají pro běžný provoz nejzajímavější kanály `Microsoft-Windows-DHCP Server Events/Admin` a `Microsoft-Windows-DHCP Server Events/Operational`.  
+📌 Pokud tyto události v Graylogu nevidíme, je potřeba je přidat do sběru ve Winlogbeatu na DHCP serveru.
+
 ---
 
 ### 5. Jak z hledání udělat widget
@@ -222,10 +245,12 @@ V praxi se nejčastěji hodí:
 Doporučení:
 
 * pro „kolik toho bylo“ použijeme **Single Number**
-* pro vývoj v čase použijeme **Time Series**
-* pro přehled top hodnot použijeme **Data Table / Top values**
+* pro vývoj v čase použijeme **Line Chart** nebo **Bar Chart**
+* pro přehled top hodnot použijeme **Data Table**
 * pro konkrétní poslední události použijeme **Message Table**
 
+📌 V aktuálním Graylogu není `Time Series` samostatný typ widgetu. Pro trend v čase vytvoříme **Aggregation widget** a jako vizualizaci zvolíme typicky `Line Chart`.  
+📌 Akce `Show Top Values` není samostatný typ widgetu. Je to jen rychlá cesta k vytvoření **Data Table** s nejčastějšími hodnotami pole.  
 📌 Graylog uvádí, že dashboard má vlastní search bar, ale ten pouze **dočasně přepisuje** dotazy widgetů. Nemění trvale jejich uloženou logiku. Proto je důležité mít widgety správně nastavené už při jejich vytvoření.
 
 ---
@@ -238,11 +263,11 @@ Tohle je nejdůležitější dashboard pro běžný provoz. Technik si ho otevř
 
 * `Last 24 hours`
 
-Právě tady dávají největší smysl widgety typu **aktivní počítače** a **aktivní uživatelé**, protože rychle ukážou, jestli prostředí „žije“ očekávaným způsobem.
+Právě tady dávají největší smysl widgety, které ukážou, **které počítače opravdu poslaly logy** a **kteří uživatelé se podle logů přihlašovali**. Je ale potřeba je správně postavit: samotný dotaz vybírá zprávy a teprve agregace widgetu z nich udělá seznam nebo počet unikátních hodnot.
 
 Doporučené widgety:
 
-#### 6.1 Aktivní Windows počítače
+#### 6.1 Počítače, které poslaly logy
 
 Zdrojový dotaz pro widget:
 
@@ -252,17 +277,20 @@ winlogbeat_source:*
 
 Widget:
 
-* **Top values** nad `winlogbeat_source`
-* případně **Single Number** s počtem unikátních počítačů
+* **Data Table** seskupená podle `winlogbeat_source` - zobrazí seznam počítačů a počet zpráv od každého z nich
+* případně druhý widget **Single Number** s metrikou pro unikátní počet hodnot nad `winlogbeat_source` - zobrazí počet unikátních počítačů
+
+📌 Samotný dotaz `winlogbeat_source:*` vybírá všechny zprávy, které mají pole `winlogbeat_source`. Seznam nebo počet počítačů vznikne až díky agregaci widgetu nad tímto polem. Pokud chceme rychlou cestu, můžeme v Graylogu použít akci `Show Top Values`, která takový `Data Table` widget vytvoří.
 
 Smysl:
 
-* rychle ukáže, které počítače v poslední době posílaly logy
+* rychle ukáže, které počítače ve zvoleném čase poslaly alespoň jeden log
 * pomůže odhalit neaktivní nebo chybějící zdroje logů
 
-Tento přehled většinou není potřeba ukládat jako samostatný saved search. V praxi bývá praktičtější vytvořit ho rovnou jako widget na dashboardu.
+📌 Tento widget neříká, že je počítač právě zapnutý nebo že je na něm někdo přihlášený. Pouze potvrzuje, že z něj ve zvoleném časovém okně přišla data.  
+📌 Tento přehled většinou není potřeba ukládat jako samostatný saved search. V praxi bývá praktičtější vytvořit ho rovnou jako widget na dashboardu.
 
-#### 6.2 Aktivní uživatelé
+#### 6.2 Uživatelé s úspěšným přihlášením
 
 Zdrojový dotaz pro widget:
 
@@ -272,13 +300,17 @@ winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4624
 
 Widget:
 
-* **Top values** nad `winlogbeat_winlog_event_data_TargetUserName`
+* **Data Table** seskupená podle `winlogbeat_winlog_event_data_TargetUserName` - zobrazí seznam uživatelů a počet odpovídajících logon událostí
+* případně druhý widget **Single Number** s metrikou pro unikátní počet hodnot nad `winlogbeat_winlog_event_data_TargetUserName` - zobrazí počet unikátních uživatelů
+
+📌 Samotný dotaz výše vybírá všechny události `4624`. Seznam nebo počet uživatelů vznikne až agregací nad polem `winlogbeat_winlog_event_data_TargetUserName`. I tady lze použít akci `Show Top Values`, výsledkem ale bude opět `Data Table`.
 
 Smysl:
 
-* rychlý přehled, kdo se v prostředí v posledních hodinách nebo dnech přihlašoval
+* rychlý přehled, kdo měl v prostředí v posledních hodinách nebo dnech úspěšné přihlášení
 * užitečné při ranní kontrole i při dohledávání podezřelé aktivity
 
+📌 Ani tady nejde o seznam uživatelů, kteří jsou právě teď přihlášení. Jde o uživatele, u kterých se v daném časovém okně objevila událost `4624`.  
 📌 V některých prostředích dává smysl z tohoto widgetu odfiltrovat technické účty, `ANONYMOUS LOGON` nebo počítačové účty končící znakem `$`.  
 📌 Stejně jako u aktivních počítačů jde obvykle spíš o widget než o saved search.
 
@@ -301,8 +333,9 @@ Stejný dotaz jako výše.
 
 Widget:
 
-* **Time Series**
+* **Line Chart**
 * metrika `count()`
+* seskupení podle `timestamp`
 
 Smysl:
 
@@ -368,9 +401,9 @@ Tento dashboard se hodí, pokud chceme mít bokem samostatný pohled na doménov
 
 Doporučené widgety:
 
-* **Top values** nad `winlogbeat_source` pro event `4625`
+* **Data Table** seskupená podle `winlogbeat_source` pro event `4625`
 * **Message Table** pro `2889`
-* **Time Series** pro `4104`
+* **Line Chart** pro `4104`
 * **Message Table** pro logy z doménových řadičů s filtrem na konkrétní servery
 
 Příklad dotazu:
@@ -395,8 +428,10 @@ Doporučené widgety:
 
 * **Message Table** pro MikroTik chyby a přihlášení
 * **Message Table** pro UniFi události
-* **Single Number** nebo **Time Series** pro Hyper-V chyby
-* **Top values** nad `source`, pokud chceme vidět, které zařízení generuje nejvíc událostí
+* **Single Number** nebo **Line Chart** pro Hyper-V chyby
+* **Message Table** pro poslední Microsoft DHCP události
+* **Data Table** seskupená podle `winlogbeat_event_code` pro Microsoft DHCP
+* **Data Table** seskupená podle `source`, pokud chceme vidět, které zařízení generuje nejvíc událostí
 
 Příklad pro Hyper-V:
 
@@ -408,6 +443,12 @@ Příklad pro síť:
 
 ```text
 source:(mikrotik01 OR unifi-gateway01 OR unifi-switch01 OR unifi-ap01) AND (error OR critical OR warning OR disconnect* OR uplink OR wan)
+```
+
+Příklad pro Microsoft DHCP:
+
+```text
+winlogbeat_source:DHCP01 AND (winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Admin" OR winlogbeat_winlog_channel:"Microsoft-Windows-DHCP Server Events/Operational")
 ```
 
 📌 U menší organizace je často praktičtější mít tento dashboard jednodušší. Není nutné se snažit zobrazit všechno najednou.
