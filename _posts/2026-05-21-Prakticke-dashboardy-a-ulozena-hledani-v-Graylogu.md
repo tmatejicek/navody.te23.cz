@@ -277,8 +277,9 @@ Postup:
 2. Klikneme na `Create +` a vybereme `Aggregation`.
 3. V `Visualization` zvolíme `Data Table`.
 4. V `Group by Row` vybereme `winlogbeat_winlog_computer_name`.
-5. V `Metric` nastavíme `count()`.
-6. Widget uložíme do dashboardu.
+5. V `Metrics` přidáme `Count` a pole necháme prázdné.
+6. Volitelně ponecháme i automaticky přidané `Percentage`, pokud chceme vidět podíl jednotlivých počítačů.
+7. Widget uložíme do dashboardu.
 
 Výsledek:
 
@@ -301,8 +302,9 @@ Postup:
 2. Klikneme na `Create +` a vybereme `Aggregation`.
 3. V `Visualization` zvolíme `Data Table`.
 4. V `Group by Row` vybereme `winlogbeat_winlog_event_data_TargetUserName`.
-5. V `Metric` nastavíme `count()`.
-6. Widget uložíme do dashboardu.
+5. V `Metrics` přidáme `Count` a pole necháme prázdné.
+6. Volitelně ponecháme i `Percentage`, pokud chceme vidět podíl jednotlivých uživatelů.
+7. Widget uložíme do dashboardu.
 
 Výsledek:
 
