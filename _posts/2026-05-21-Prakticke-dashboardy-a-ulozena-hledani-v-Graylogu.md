@@ -295,7 +295,7 @@ Pokud chceme místo seznamu jen číslo, vytvoříme druhý widget `Single Numbe
 Dotaz:
 
 ```text
-winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4624
+winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4624 AND NOT winlogbeat_winlog_event_data_TargetUserName:/.*\$/ AND NOT winlogbeat_winlog_event_data_TargetUserName:SYSTEM
 ```
 
 Postup:
@@ -315,7 +315,7 @@ Výsledek:
 * seznam uživatelů a čas jejich posledního zachyceného přihlášení
 * rychlý přehled přihlašovací aktivity za posledních 24 hodin
 
-V praxi bývá vhodné odfiltrovat technické účty, `ANONYMOUS LOGON` a počítačové účty končící znakem `$`. Pokud chceme místo seznamu jen číslo, vytvoříme druhý widget `Single Number` a zvolíme metriku pro unikátní počet hodnot nad `winlogbeat_winlog_event_data_TargetUserName`.
+Tento dotaz už odfiltruje počítačové účty končící znakem `$` i účet `SYSTEM`. Pokud chceme ještě čistší přehled, můžeme navíc vyloučit například `ANONYMOUS LOGON` nebo konkrétní servisní účty. Pokud chceme místo seznamu jen číslo, vytvoříme druhý widget `Single Number` a zvolíme metriku pro unikátní počet hodnot nad `winlogbeat_winlog_event_data_TargetUserName`.
 
 #### 6.3 Počet neúspěšných přihlášení
 
