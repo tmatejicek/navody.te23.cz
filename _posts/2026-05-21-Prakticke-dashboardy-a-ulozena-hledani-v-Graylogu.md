@@ -87,6 +87,12 @@ Níže jsou příklady saved searches, které dávají smysl pro menší infrast
 
 #### 4.1 Neúspěšná přihlášení do Windows
 
+Doporučený název saved search:
+
+```text
+Neúspěšná přihlášení za 24h
+```
+
 ```text
 winlogbeat_winlog_channel:"Security" AND winlogbeat_event_code:4625
 ```
@@ -102,6 +108,12 @@ K čemu se hodí:
 
 #### 4.2 PowerShell script block logging
 
+Doporučený název saved search:
+
+```text
+PowerShell 4104 za 24h
+```
+
 ```text
 winlogbeat_winlog_channel:"Microsoft-Windows-PowerShell/Operational" AND winlogbeat_event_code:4104
 ```
@@ -112,6 +124,12 @@ K čemu se hodí:
 * rychlá kontrola podezřelé aktivity na serverech
 
 #### 4.3 Nešifrované LDAP dotazy
+
+Doporučený název saved search:
+
+```text
+LDAP 2889 za 24h
+```
 
 ```text
 winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:2889
@@ -124,6 +142,12 @@ K čemu se hodí:
 Navazuje na [článek o detekci nešifrovaného LDAPu]({% post_url 2025-05-15-Detekce-nesifrovanych-LDAP-dotazu-v-prostredi-Active-Directory %}).
 
 #### 4.4 Hyper-V hosty - chyby a varování
+
+Doporučený název saved search:
+
+```text
+Hyper-V hosty - chyby a varování
+```
 
 Pokud do Graylogu posíláme z Hyper-V hostů alespoň standardní `Application` a `System` logy, může být praktické například toto hledání:
 
@@ -141,6 +165,12 @@ K čemu se hodí:
 
 #### 4.5 MikroTik - chyby, přihlášení a změny konfigurace
 
+Doporučený název saved search:
+
+```text
+MikroTik chyby a přihlášení
+```
+
 U síťových prvků bývá nejpraktičtější začít přes pole `source` a `message`, protože přesný formát syslogu se může lišit podle verze a konfigurace.
 
 Například:
@@ -156,6 +186,12 @@ K čemu se hodí:
 * chybové stavy routeru
 
 #### 4.6 UniFi - důležité infrastrukturní události
+
+Doporučený název saved search:
+
+```text
+UniFi události za 24h
+```
 
 Například:
 
