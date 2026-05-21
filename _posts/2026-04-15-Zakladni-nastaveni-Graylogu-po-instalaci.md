@@ -82,7 +82,7 @@ Ve formuláři pak pracujeme hlavně s položkami:
 * **Min. in storage**
 * **Max. in storage**
 
-Pro jednoduché on-premise prostředí je praktické nastavit do obou polí stejnou hodnotu. Tím dostaneme přímo cílovou dobu uchování daného index setu.
+Pokud používáme `Index Time Size Optimizing`, je praktičtější nenechávat obě hodnoty stejné. Mezi `Min. in storage` a `Max. in storage` necháme rezervu, aby Graylog mohl rotaci posunout podle velikosti shardů. Výchozí hodnoty `30 days / 40 days` jsou pro pochopení principu dobrý příklad.
 
 Po úpravě změny uložíme.
 
@@ -92,27 +92,27 @@ Po úpravě změny uložíme.
 
 Pokud organizace **nespadá pod ZoKB**:
 
-* `windows-log`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
-* `network-syslog`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
-* `server-logs`: `Min. in storage = 90 dní`, `Max. in storage = 90 dní`
+* `Default index set`: `Min. in storage = 30 dní`, `Max. in storage = 40 dní`
+* `server-logs`: `Min. in storage = 90 dní`, `Max. in storage = 100 dní`, pokud chceme delší retenci serverů
 
 Pokud organizace spadá do **nižšího režimu** podle ZoKB:
 
-* `windows-log`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
-* `network-syslog`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
-* `server-logs`: `Min. in storage = 12 měsíců`, `Max. in storage = 12 měsíců`
+* `Default index set`: `Min. in storage = 30 dní`, `Max. in storage = 40 dní`
+* `server-logs`: `Min. in storage = 365 dní`, `Max. in storage = 395 dní`
 
 Pokud organizace spadá do **vyššího režimu** podle ZoKB:
 
-* `windows-log`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
-* `network-syslog`: `Min. in storage = 30 dní`, `Max. in storage = 30 dní`
-* `server-logs`: `Min. in storage = 18 měsíců`, `Max. in storage = 18 měsíců`
+* `Default index set`: `Min. in storage = 30 dní`, `Max. in storage = 40 dní`
+* `server-logs`: `Min. in storage = 548 dní`, `Max. in storage = 578 dní`
 
 ---
 
-### 3. Vytvoření samostatných index setů pro hlavní typy logů
+### 3. Vytvoření samostatného index setu pro serverové logy
 
-I když Graylog může běžet jen s jedním výchozím index setem, v praxi je lepší si hned na začátku vytvořit samostatné index sety pro hlavní typy dat.
+Pokud mají logy koncových stanic i síťové syslogy stejnou retenci jako výchozí nastavení Graylogu, nemá smysl pro ně zakládat další index sety. V takovém případě necháme:
+
+* `Default index set` pro běžné endpointy a síťové logy
+* samostatný `server-logs` jen pro servery, AD a bezpečnostní logy s delší retencí
 
 V aktuálním UI otevřeme:
 
@@ -126,16 +126,14 @@ Klikneme na:
 Create index set
 ```
 
-Alespoň pro menší prostředí dává smysl vytvořit například:
+A v tomto modelu vytvoříme jen:
 
-* `windows-log`
-* `network-syslog`
 * `server-logs`
 
-Praktický základ pro každý z nich:
+Praktický základ:
 
-* **Title**: například `Windows Endpoints`
-* **Index prefix**: například `windows-log`
+* **Title**: `Server Logs`
+* **Index prefix**: `server-logs`
 * **Analyzer**: `standard`
 * **Index shards**: `1`
 * **Index replicas**: `0`
@@ -144,12 +142,12 @@ V části **Rotation & Retention** pak nastavíme retenci podle typu dat.
 
 Praktické mapování:
 
-* logy koncových stanic -> index set `windows-log`
-* síťové syslogy -> index set `network-syslog`
+* logy koncových stanic -> `Default index set`
+* síťové syslogy -> `Default index set`
 * logy serverů včetně AD a bezpečnostních událostí -> index set `server-logs`
 
 📌 Pokud organizace spadá do režimu vyšších povinností, je samostatný index set pro serverové a bezpečnostní logy prakticky nutnost.  
-📌 Pokud dáme všechna data do jednoho index setu, bude se hůř nastavovat retence, přehlednost i budoucí dashboardy.
+📌 Pokud mají dva typy logů stejnou retenci, samostatný stream stačí a další index set jen zbytečně přidává správu navíc.
 
 ---
 
@@ -186,7 +184,7 @@ Praktický postup v průvodci:
 1. zvolíme **Skip Illuminate**
 2. v části routování vybereme **Create Stream**
 3. jako název streamu zadáme například `Windows Endpoints`
-4. jako **Index Set** vybereme `windows-log`
+4. jako **Index Set** ponecháme `Default index set`
 5. dokončíme průvodce přes **Start Input**
 
 #### 4.2 Syslog input pro síťové prvky
@@ -202,7 +200,7 @@ Stejný princip použijeme pro MikroTik a UniFi:
 V routování nastavíme například:
 
 * stream `Network Syslog`
-* index set `network-syslog`
+* index set `Default index set`
 
 Praktická pravidla:
 
@@ -218,7 +216,7 @@ Pokud chceme mít logy koncových stanic na `30 dní`, ale logy serverů na `12`
 
 Praktický postup:
 
-1. vytvoříme stream `Windows Endpoints` s index setem `windows-log`
+1. vytvoříme stream `Windows Endpoints` s index setem `Default index set`
 2. vytvoříme druhý stream `Server Logs`
 3. tomuto streamu přiřadíme index set `server-logs`
 4. do streamu `Server Logs` přidáme pravidla například pro:
@@ -236,7 +234,7 @@ Streams
 
 Tím získáme:
 
-* kratší retenci pro koncové stanice
+* kratší retenci pro koncové stanice a síťové logy v `Default index set`
 * delší retenci pro serverové a bezpečnostní logy
 * jednodušší dashboardy, alerty a oprávnění
 
@@ -353,10 +351,9 @@ Zkontrolujeme:
 
 Při vytváření inputů zkontrolujeme, že:
 
-* logy koncových stanic tečou do streamu `Windows Endpoints`
-* logy serverů tečou do streamu `Server Logs`
-* síťové logy tečou do streamu `Network Syslog`
-* streamy používají očekávané index sety
+* logy koncových stanic tečou do streamu `Windows Endpoints` a používají `Default index set`
+* logy serverů tečou do streamu `Server Logs` a používají `server-logs`
+* síťové logy tečou do streamu `Network Syslog` a používají `Default index set`
 
 #### 7.3 Ověření polí na reálné zprávě
 
@@ -385,7 +382,7 @@ To je důležité hlavně v prvních dnech po nasazení. U režimu vyšších po
 
 ✅ Po instalaci je vhodné nejdřív nastavit `http_external_uri` a ověřit výslednou URL  
 ✅ Retenci a rotaci nastavujeme přímo přes `System / Indices`  
-✅ Samostatné typy logů je lepší rozdělit do vlastních streamů a index setů  
+✅ `Default index set` může zůstat pro běžné endpointy a síťové logy  
 ✅ Pro ZoKB dává smysl mít delší retenci v index setu `server-logs`  
 ✅ Každý input je potřeba nejen spustit, ale i dokončit v `Input Setup Wizard`  
 ✅ V Graylog Open je praktické počítat s jednoduchým modelem rolí a sdílení  
