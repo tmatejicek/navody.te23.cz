@@ -35,7 +35,35 @@ V minimální variantě budeme potřebovat povolit tyto porty:
 
 📌 V této architektuře **neinstalujeme OpenSearch ručně**. O vyhledávací vrstvu se stará **Graylog Data Node**.
 
-#### 1.1 Vygenerování sdíleného `password_secret`
+#### 1.1 Doporučené parametry VM
+
+Graylog v oficiálním **Core deployment** modelu doporučuje pro tuto dvouserverovou architekturu:
+
+* `graylog01` (Graylog server + MongoDB): **8 vCPU, 16 GB RAM**
+* `graylog02` (Graylog Data Node): **8 vCPU, 24 GB RAM**
+
+Pro oba servery je vhodné použít:
+
+* **SSD/NVMe** úložiště
+* na datových discích ideálně **XFS**
+
+Velikost disků je potřeba navrhnout podle očekávaného objemu logů:
+
+* Na `graylog01` počítáme s místem pro systém, MongoDB a hlavně **message journal**.
+* Graylog doporučuje pro journal vyhradit kapacitu odpovídající **3x až 5x denní ingestaci logů**.
+* Na `graylog02` počítáme s místem pro **Data Node index storage**.
+* Graylog doporučuje pro hot data orientační vzorec:
+  **[denní ingest] × [počet retenčních dní] × 120 %**
+
+Příklad pro prostředí s ingestací **20 GB logů denně** a **30 dny hot retention**:
+
+* `graylog01`: pro journal přibližně **60 až 100 GB** jen na message journal
+* `graylog02`: pro index storage přibližně **720 GB**
+
+📌 K těmto hodnotám je potřeba přičíst rezervu pro operační systém, logy, balíčky a budoucí růst.  
+📌 Pro menší lab nebo proof-of-concept lze začít menšími disky, ale pro produkci je lepší držet se výpočtu podle reálné ingestace a retence.
+
+#### 1.2 Vygenerování sdíleného `password_secret`
 
 Na jednom ze serverů si vygenerujeme tajný řetězec, který použijeme **ve stejné podobě** v `server.conf` i `datanode.conf`:
 
@@ -49,7 +77,7 @@ Výstup si uložíme, například:
 5dbd6f7a6f8d5f9cc1f1d0f4cb34b04fa5cbb6fcb2a80e4228f84c7f0c40d41d
 ```
 
-#### 1.2 Vygenerování hashovaného hesla správce
+#### 1.3 Vygenerování hashovaného hesla správce
 
 Na `graylog01` si připravíme hash hesla pro účet `admin`:
 
