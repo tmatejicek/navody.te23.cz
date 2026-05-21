@@ -92,22 +92,21 @@ Po úpravě změny uložíme.
 
 Pokud organizace **nespadá pod ZoKB**:
 
-* `windows-logs`: **30 dní**
+* `windows-log`: **30 dní**
 * `network-syslog`: **30 dní**
-* `security-events`: **90 dní**
+* `server-logs`: **90 dní**
 
 Pokud organizace spadá do **nižšího režimu** podle ZoKB:
 
-* `windows-logs`: **30 dní**
+* `windows-log`: **30 dní**
 * `network-syslog`: **30 dní**
-* `security-events`: **12 měsíců**
+* `server-logs`: **12 měsíců**
 
 Pokud organizace spadá do **vyššího režimu** podle ZoKB:
 
-* `windows-logs`: **30 dní**
+* `windows-log`: **30 dní**
 * `network-syslog`: **30 dní**
-* `security-events`: **18 měsíců minimum**
-* `ad-security`: **18 měsíců minimum**
+* `server-logs`: **18 měsíců minimum**
 
 ---
 
@@ -129,15 +128,14 @@ Create index set
 
 Alespoň pro menší prostředí dává smysl vytvořit například:
 
-* `windows-logs`
+* `windows-log`
 * `network-syslog`
-* `security-events`
-* volitelně `ad-security`
+* `server-logs`
 
 Praktický základ pro každý z nich:
 
-* **Title**: například `Windows Logs`
-* **Index prefix**: například `windows`
+* **Title**: například `Windows Endpoints`
+* **Index prefix**: například `windows-log`
 * **Analyzer**: `standard`
 * **Index shards**: `1`
 * **Index replicas**: `0`
@@ -146,12 +144,11 @@ V části **Rotation & Retention** pak nastavíme retenci podle typu dat.
 
 Praktické mapování:
 
-* Windows logy -> index set `windows-logs`
+* logy koncových stanic -> index set `windows-log`
 * síťové syslogy -> index set `network-syslog`
-* bezpečnostní logy -> index set `security-events`
-* bezpečnostní AD logy -> index set `ad-security`
+* logy serverů včetně AD a bezpečnostních událostí -> index set `server-logs`
 
-📌 Pokud organizace spadá do režimu vyšších povinností, je samostatný index set pro bezpečnostní logy prakticky nutnost.  
+📌 Pokud organizace spadá do režimu vyšších povinností, je samostatný index set pro serverové a bezpečnostní logy prakticky nutnost.  
 📌 Pokud dáme všechna data do jednoho index setu, bude se hůř nastavovat retence, přehlednost i budoucí dashboardy.
 
 ---
@@ -188,8 +185,8 @@ Praktický postup v průvodci:
 
 1. zvolíme **Skip Illuminate**
 2. v části routování vybereme **Create Stream**
-3. jako název streamu zadáme například `Windows Event Logs`
-4. jako **Index Set** vybereme `windows-logs`
+3. jako název streamu zadáme například `Windows Endpoints`
+4. jako **Index Set** vybereme `windows-log`
 5. dokončíme průvodce přes **Start Input**
 
 #### 4.2 Syslog input pro síťové prvky
@@ -213,18 +210,19 @@ Praktická pravidla:
 * pokud to zdroj podporuje, je spolehlivější **TCP** než **UDP**
 * input bez dokončeného **Input Setup Wizard** ještě není v plném provozu
 * stream a index set je lepší určit hned při vzniku inputu
-* bezpečnostní logy je vhodné směrovat do samostatného streamu s delší retencí
+* serverové a bezpečnostní logy je vhodné směrovat do samostatného streamu s delší retencí
 
-#### 4.3 Jak oddělit bezpečnostní logy do delší retence
+#### 4.3 Jak oddělit koncové stanice a servery
 
-Pokud chceme mít například běžné Windows logy na `30 dní`, ale bezpečnostní logy na `12` nebo `18 měsíců`, nestačí jen jeden společný stream.
+Pokud chceme mít logy koncových stanic na `30 dní`, ale logy serverů na `12` nebo `18 měsíců`, nestačí jen jeden společný stream.
 
 Praktický postup:
 
-1. vytvoříme běžný stream `Windows Event Logs` s index setem `windows-logs`
-2. pak vytvoříme další stream `Security Events`
-3. tomuto streamu přiřadíme index set `security-events`
-4. do streamu `Security Events` přidáme pravidla například pro:
+1. vytvoříme stream `Windows Endpoints` s index setem `windows-log`
+2. vytvoříme druhý stream `Server Logs`
+3. tomuto streamu přiřadíme index set `server-logs`
+4. do streamu `Server Logs` přidáme pravidla například pro:
+   * hostname serverů a doménových řadičů
    * `winlogbeat_winlog_channel:"Security"`
    * `winlogbeat_winlog_channel:"Microsoft-Windows-PowerShell/Operational"`
    * `winlogbeat_winlog_channel:"Microsoft-Windows-Sysmon/Operational"`
@@ -238,8 +236,8 @@ Streams
 
 Tím získáme:
 
-* kratší retenci pro běžné provozní logy
-* delší retenci pro bezpečnostně důležité události
+* kratší retenci pro koncové stanice
+* delší retenci pro serverové a bezpečnostní logy
 * jednodušší dashboardy, alerty a oprávnění
 
 ---
@@ -355,7 +353,8 @@ Zkontrolujeme:
 
 Při vytváření inputů zkontrolujeme, že:
 
-* Winlogbeat teče do streamu `Windows Event Logs`
+* logy koncových stanic tečou do streamu `Windows Endpoints`
+* logy serverů tečou do streamu `Server Logs`
 * síťové logy tečou do streamu `Network Syslog`
 * streamy používají očekávané index sety
 
