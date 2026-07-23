@@ -51,32 +51,77 @@ Na serveru spustíme PowerShell jako administrátor a provedeme:
 ```powershell
 $KpsFqdn = "kps.example.com"
 $KpsPort = 443
-$Cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
-    $_.DnsNameList.Unicode -contains $KpsFqdn
-} | Select-Object -First 1
-$Guid = [Guid]::NewGuid()
+$Now = Get-Date
+$Candidates = @(Get-ChildItem Cert:\LocalMachine\My | Where-Object {
+    $_.HasPrivateKey -and
+    $_.NotBefore -le $Now -and
+    $_.NotAfter -gt $Now -and
+    $_.DnsNameList.Unicode -contains $KpsFqdn -and
+    $_.EnhancedKeyUsageList.ObjectId.Value -contains '1.3.6.1.5.5.7.3.1'
+})
+$ApplicationId = '{' + [Guid]::NewGuid().ToString() + '}'
 
-if (-not $Cert) {
-    throw "Certifikát pro $KpsFqdn nebyl nalezen v LocalMachine\My."
+if ($Candidates.Count -ne 1) {
+    $Candidates | Format-Table Subject, Thumbprint, NotAfter
+    throw "Pro $KpsFqdn musí být nalezen právě jeden platný Server Authentication certifikát s privátním klíčem."
+}
+$Cert = $Candidates[0]
+
+$ExistingBindings = (& netsh.exe http show sslcert | Out-String)
+if ($LASTEXITCODE -ne 0) {
+    throw "Nelze vypsat HTTP.sys SSL bindingy."
+}
+if ($ExistingBindings.Contains("0.0.0.0:$KpsPort")) {
+    throw "Na 0.0.0.0:$KpsPort již existuje HTTP.sys SSL binding. Nejdříve ověřte jeho vlastníka a účel."
 }
 
 # Rezervace URL pro HTTP.sys
-cmd /c ('netsh http add urlacl url=https://+:{0}/KdcProxy user="NT AUTHORITY\Network Service"' -f $KpsPort)
+& netsh.exe http add urlacl "url=https://+:$KpsPort/KdcProxy" 'user=NT AUTHORITY\Network Service'
+if ($LASTEXITCODE -ne 0) {
+    throw "Vytvoření URL ACL selhalo. Ověřte existující rezervace příkazem netsh http show urlacl."
+}
 
 # Připojení certifikátu na 443/TCP
-Add-NetIPHttpsCertBinding -IPPort "0.0.0.0:$KpsPort" -CertificateHash $Cert.Thumbprint -CertificateStoreName My -ApplicationId "{$Guid}" -NullEncryption $false
+& netsh.exe http add sslcert `
+    "ipport=0.0.0.0:$KpsPort" `
+    "certhash=$($Cert.Thumbprint)" `
+    "appid=$ApplicationId" `
+    'certstorename=MY'
+if ($LASTEXITCODE -ne 0) {
+    throw "Vytvoření HTTP.sys SSL bindingu selhalo. URL ACL již může existovat; před opakováním stav zkontrolujte."
+}
 ```
+
+⚠️ Příkaz záměrně nepřepisuje existující SSL binding. Pokud port používá IIS, RD Gateway, DirectAccess nebo jiná služba, nejdříve vyhodnotíme sdílení HTTP.sys a existující konfiguraci; binding ani URL ACL nemažeme naslepo. Pokud skript skončí až po vytvoření URL ACL, před dalším spuštěním existující rezervaci zkontrolujeme.
 
 ### 2.3 Nastavení registru pro KDC Proxy
 
 ```powershell
-Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\KPSSVC\Settings -Name HttpsClientAuth -Type DWord -Value 0 -Force
-Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\KPSSVC\Settings -Name DisallowUnprotectedPasswordAuth -Type DWord -Value 0 -Force
+$SettingsPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\KPSSVC\Settings'
+New-Item -Path $SettingsPath -Force | Out-Null
+
+New-ItemProperty -Path $SettingsPath -Name HttpsClientAuth -PropertyType DWord -Value 0 -Force | Out-Null
+New-ItemProperty -Path $SettingsPath -Name DisallowUnprotectedPasswordAuth -PropertyType DWord -Value 0 -Force | Out-Null
+
+# HttpsUrlGroup je potřeba jen pro nestandardní port nebo cestu.
+if ($KpsPort -ne 443) {
+    $ExistingUrlGroups = @(
+        (Get-ItemProperty -Path $SettingsPath -Name HttpsUrlGroup -ErrorAction SilentlyContinue).HttpsUrlGroup |
+            Where-Object { $_ }
+    )
+    $RequiredUrlGroup = "+:$KpsPort"
+    if ($RequiredUrlGroup -notin $ExistingUrlGroups) {
+        $UrlGroups = @($ExistingUrlGroups + $RequiredUrlGroup | Select-Object -Unique)
+        New-ItemProperty -Path $SettingsPath -Name HttpsUrlGroup -PropertyType MultiString -Value $UrlGroups -Force | Out-Null
+    }
+}
 ```
 
-Tyto hodnoty odpovídají běžnému **password-based Kerberos over HTTPS** scénáři pro standardní klienty.
+📌 Tyto hodnoty odpovídají běžnému **password-based Kerberos over HTTPS** scénáři pro standardní klienty.
 
-📌 Pokud z nějakého důvodu nepoužíváme výchozí port `443`, musíme tomu přizpůsobit i SSL binding a klientské mapování v GPO/Intune.
+Pokud nepoužíváme výchozí port `443`, musí stejný port odpovídat v URL ACL, SSL bindingu, `HttpsUrlGroup`, firewallu a klientském mapování v GPO nebo Intune.
+
+⚠️ Otisk certifikátu je součástí HTTP.sys bindingu. Po obnově certifikátu proto nestačí, že je nový certifikát v úložišti: v servisním okně musíme binding převázat na jeho nový thumbprint a znovu ověřit HTTPS. Existující binding nemažeme bez kontroly, zda jej nesdílí další služba.
 
 ### 2.4 Spuštění služby a otevření portu
 
@@ -141,8 +186,7 @@ Toto nastavení odpovídá stejnému mapování jako v GPO:
 example.com -> <https kps.example.com:443:kdcproxy />
 ```
 
-📌 Tuto variantu berme hlavně jako nouzové lokální nastavení pro testování a troubleshooting.  
-📌 Po změně registru doporučujeme klient restartovat a před dalším testem provést `klist purge`.
+📌 Tuto variantu berme hlavně jako nouzové lokální nastavení pro testování a troubleshooting. Po změně registru klient restartujeme a před dalším testem provedeme `klist purge`.
 
 Pro čistě diagnostické účely můžeme dočasně vypnout kontrolu revokace TLS certifikátu KDC proxy:
 
@@ -150,14 +194,20 @@ Pro čistě diagnostické účely můžeme dočasně vypnout kontrolu revokace T
 reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters" /v NoRevocationCheck /t REG_DWORD /d 1 /f
 ```
 
-⚠ Toto nastavení používejme jen pro troubleshooting. V produkčním provozu má být revocation check zapnutý.
+⚠️ Toto nastavení používejme jen pro troubleshooting. V produkčním provozu má být revocation check zapnutý.
+
+Po testu diagnostickou výjimku bezpodmínečně odstraníme a klient restartujeme:
+
+```powershell
+Remove-ItemProperty -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters' -Name NoRevocationCheck -ErrorAction SilentlyContinue
+```
 
 ### 3.3 Pomocí Intune (Microsoft Endpoint Manager)
 
-Pokud spravujeme klienty pomocí **Intune**, nejpraktičtější je dnes použít **Settings catalog**, protože Microsoft do něj promítá i Windows **Administrative Templates (ADMX)** nastavení a není nutné ručně skládat OMA-URI payload.
+Pokud spravujeme klienty pomocí **Intune**, nejdříve ověříme, zda je politika dostupná v **Settings catalog**. Microsoft do katalogu průběžně přidává Windows Administrative Templates (ADMX), ale dostupnost konkrétní položky se může mezi tenanty a verzemi katalogu lišit.
 
 📌 Doporučený postup:
-- V Intune otevřeme `Devices > Configuration > Create > New policy`.
+- V Intune otevřeme `Devices > Manage devices > Configuration > Create > New policy`.
 - Zvolíme:
   - **Platform:** `Windows 10 and later`
   - **Profile type:** `Settings catalog`
@@ -173,12 +223,12 @@ Value: <https kps.example.com:443:kdcproxy />
 📌 Pokud spravujeme více doménových suffixů, přidáme samostatnou položku pro každý suffix.  
 📌 Politiku doporučujeme přiřazovat na **device groups**, protože jde o **Computer Configuration** nastavení.
 
-Pokud ve vaší tenant verzi nebo v konkrétním prostředí tento setting v **Settings catalog** nevidíte, použijeme fallback přes **Custom** profil s ADMX-backed policy:
+Pokud položku v **Settings catalog** nevidíme, použijeme profil **Templates > Custom** s dokumentovanou ADMX-backed policy:
 
 - **OMA-URI:** `./Device/Vendor/MSFT/Policy/Config/ADMX_Kerberos/KdcProxyServer`
-- **Data type:** `String (XML file)`
+- **Data type:** `String`
 
-V takovém případě ale musí být hodnota zadaná jako **SyncML / XML-encoded ADMX-backed payload** podle aktuální Microsoft dokumentace. Proto je v běžné praxi bezpečnější a jednodušší použít nejdřív **Settings catalog** a teprve až jako nouzové řešení sahat po custom OMA-URI profilu.
+Hodnota musí být SyncML payload pro zapnutí politiky a seznam mapování musí být XML-encoded. Nevkládáme do OMA-URI pouze řetězec `<https ... />`; takový profil není platnou ADMX-backed konfigurací. Payload vytvoříme podle aktuální dokumentace Policy CSP a před produkčním nasazením ověříme na jednom zařízení. Pokud nechceme SyncML spravovat ručně, použijeme GPO nebo lokální registr z kapitoly 3.2.
 
 📌 Pro troubleshooting lze klientům dočasně nasadit i politiku **Disable revocation checking for the SSL certificate of KDC proxy servers**, ale Microsoft ji doporučuje jen pro diagnostiku, ne pro produkční provoz.
 
@@ -198,7 +248,7 @@ Služba musí běžet (Status: Running).
 
 ```powershell
 netsh http show urlacl | findstr /i KdcProxy
-Get-NetIPHttpsCertBinding -IPPort "0.0.0.0:443"
+netsh http show sslcert ipport=0.0.0.0:443
 netstat -ano | findstr :443
 ```
 
@@ -213,8 +263,18 @@ Ověříme, že certifikát obsahuje:
 ### 4.4 Event Logy
 
 Chyby najdeme v:
-- serverových logách **KdcProxy**
-- klientském logu **Applications and Services Logs > Microsoft > Windows > Security-Kerberos > Operational**
+- serverovém logu **Applications and Services Logs > Microsoft > Windows > Kerberos-KDCProxy > Operational**,
+- klientském logu **Applications and Services Logs > Microsoft > Windows > Security-Kerberos > Operational**.
+
+Přesné názvy dostupných kanálů a jejich stav ověříme z příkazového řádku spuštěného jako správce:
+
+```powershell
+wevtutil.exe el | findstr /i "Kerberos KDCProxy"
+wevtutil.exe gl Microsoft-Windows-Kerberos-KDCProxy/Operational
+wevtutil.exe gl Microsoft-Windows-Security-Kerberos/Operational
+```
+
+Pokud je potřebný kanál vypnutý, zapneme jej například příkazem `wevtutil.exe sl <název-kanálu> /e:true` s názvem přesně opsaným z prvního výpisu. Na klientovi jsou pro hledání příčiny užitečné mimo jiné události `108`, `109` a `200`.
 
 ### 4.5 Reálný test použití KDC proxy
 
@@ -236,6 +296,28 @@ Teprve potom provedeme přístup k doménovému prostředku nebo vyžádání Ke
 
 📌 Samotné `klist get krbtgt` nestačí jako důkaz použití proxy. Pokud je klient stále schopný dosáhnout přímo na doménový řadič, Kerberos může fungovat i bez KDC proxy.
 
+### 4.6 Chyba `0x51f` / `0xC000005E`
+
+Výstup:
+
+```text
+Error calling API LsaCallAuthenticationPackage (GetTicket substatus): 0x51f
+klist failed with 0xc000005e
+```
+
+❌ Chyba znamená **STATUS_NO_LOGON_SERVERS**. Nejde automaticky o špatné heslo; klient nedokázal získat použitelný KDC přímo ani přes nakonfigurovanou proxy. Zkontrolujeme:
+
+```powershell
+reg query "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos" /s
+Get-Service iphlpsvc
+Test-NetConnection kps.example.com -Port 443
+$env:LOGONSERVER
+nltest /dsgetdc:example.com
+nltest /dclist:example.com
+```
+
+`nltest` ověřuje přímé vyhledání doménového řadiče; KDC Proxy neposkytuje obecnou LDAP ani DC Locator konektivitu. Mimo firemní síť proto může `nltest` selhat i při funkční KDC proxy. Rozhodující je správné mapování suffixu, běžící služba **IP Helper** (`iphlpsvc`), důvěryhodný certifikát včetně dostupné revokace, port `443` a události v obou Kerberos logách.
+
 ---
 
 ## 5. Shrnutí
@@ -246,3 +328,9 @@ Teprve potom provedeme přístup k doménovému prostředku nebo vyžádání Ke
 ✅ **Klienty je nutné mapovat podle interního DNS suffixu domény na externí KDC proxy URL.**  
 ✅ **V Intune používáme ADMX-backed politiku `KdcProxyServer`, nikoliv vlastní nezdokumentovaný XML payload.**  
 ✅ **Správné ověření musí proběhnout mimo firemní síť a s kontrolou logů, ne jen pomocí `klist`.**
+
+## Zdroje
+
+- [SMB over QUIC - konfigurace KDC Proxy pomocí PowerShellu](https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-over-quic)
+- [ADMX_Kerberos Policy CSP](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-kerberos)
+- [Netsh HTTP](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netsh-http)

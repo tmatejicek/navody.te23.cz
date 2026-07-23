@@ -7,288 +7,13 @@ layout: post
 
 ## Základní nastavení Graylogu po instalaci
 
-Samotná instalace Graylogu ještě neznamená, že je prostředí připravené pro běžný provoz. V tomto článku si ukážeme, **co přesně po instalaci nastavit**, **kde to v aktuálním Graylogu najít** a **co zkontrolovat**, aby se později nemusely předělávat inputy, streamy, retence nebo dashboardy.
+Postup navazuje na [Instalaci Graylog Open na Debianu 12]({% post_url 2026-04-15-Instalace-Graylog-Open-na-Debianu-12-dvouserverove-reseni %}) a používá názvy položek z Graylogu 7.1.
 
-Tento článek navazuje na [Instalaci Graylog Open na Debianu 12]({% post_url 2026-04-15-Instalace-Graylog-Open-na-Debianu-12-dvouserverove-reseni %}).
-
----
-
-### 1. Nastavení veřejné URL Graylogu v `server.conf`
-
-První praktická věc po instalaci je správně nastavit veřejnou URL Graylogu. Používá se ve webovém rozhraní i v odkazech, které Graylog generuje například v e-mailových notifikacích.
-
-Na `graylog01` upravíme soubor:
-
-```text
-/etc/graylog/server/server.conf
-```
-
-a nastavíme:
-
-```ini
-http_external_uri = https://logs.example.cz/
-```
-
-Pokud Graylog publikujeme přes reverzní proxy nebo certifikát s veřejným názvem, musí zde být právě tato výsledná adresa, nikoliv interní hostname serveru.
-
-Pak restartujeme službu:
-
-```bash
-sudo systemctl restart graylog-server
-```
-
-Ověření:
-
-1. otevřeme Graylog v prohlížeči přes cílovou URL
-2. zkontrolujeme, že se přesměrování nebo odkazy nevracejí na interní jméno serveru
-
-📌 Pokud `http_external_uri` nenastavíme správně, budou některé odkazy z Graylogu směřovat na špatnou adresu.
+📌 Nastavení níže provádíme před připojením většího počtu produkčních zdrojů logů.
 
 ---
 
-### 2. Nastavení retence a rotace v index setech
-
-Graylog ukládá zprávy do **index setů**. Právě zde určujeme, jak budou data rotovat a jak dlouho zůstanou dostupná.
-
-V prostředí, které máš na screenshotu, je praktická cesta:
-
-```text
-System / Indices
-```
-
-Tady:
-
-1. otevřeme existující `Default index set`
-2. nebo klikneme na `Create index set`
-3. nastavíme hodnoty přímo na konkrétním index setu
-
-Pro menší nebo střední on-premise prostředí v Graylog Open dává smysl zkontrolovat nebo nastavit:
-
-* **Index Analyzer**: `standard`
-* **Shards per Index**: `1`
-* **Replicas**: `0`
-* **Max. Number of Segments**: `1`
-* **Field type refresh interval**: `5 minutes`
-
-V části **Rotation & Retention** zkontrolujeme, jaká strategie je nastavená.
-
-Prakticky nastavíme:
-
-* **Rotation strategy**: `Index Time Size Optimizing`
-* **Retention strategy**: `Delete`
-
-Ve formuláři pak pracujeme hlavně s položkami:
-
-* **Min. in storage**
-* **Max. in storage**
-
-Pokud používáme `Index Time Size Optimizing`, je praktičtější nenechávat obě hodnoty stejné. Mezi `Min. in storage` a `Max. in storage` necháme rezervu, aby Graylog mohl rotaci posunout podle velikosti shardů. Výchozí hodnoty `30 days / 40 days` jsou pro pochopení principu dobrý příklad.
-
-Po úpravě změny uložíme.
-
-📌 V prostředí s několika málo streamy je často praktičtější vytvořit si správně hned konkrétní index sety přímo v `System / Indices`.
-
-#### 2.1 Co nastavit prakticky
-
-Pokud organizace **nespadá pod ZoKB**:
-
-* `Default index set`: `Min. in storage = 30 dní`, `Max. in storage = 40 dní`
-* `server-logs`: `Min. in storage = 90 dní`, `Max. in storage = 100 dní`, pokud chceme delší retenci serverů
-
-Pokud organizace spadá do **nižšího režimu** podle ZoKB:
-
-* `Default index set`: `Min. in storage = 30 dní`, `Max. in storage = 40 dní`
-* `server-logs`: `Min. in storage = 365 dní`, `Max. in storage = 395 dní`
-
-Pokud organizace spadá do **vyššího režimu** podle ZoKB:
-
-* `Default index set`: `Min. in storage = 30 dní`, `Max. in storage = 40 dní`
-* `server-logs`: `Min. in storage = 548 dní`, `Max. in storage = 578 dní`
-
----
-
-### 3. Vytvoření samostatného index setu pro serverové logy
-
-Pokud mají logy koncových stanic i síťové syslogy stejnou retenci jako výchozí nastavení Graylogu, nemá smysl pro ně zakládat další index sety. V takovém případě necháme:
-
-* `Default index set` pro běžné endpointy a síťové logy
-* samostatný `server-logs` jen pro servery, AD a bezpečnostní logy s delší retencí
-
-V aktuálním UI otevřeme:
-
-```text
-System / Indices
-```
-
-Klikneme na:
-
-```text
-Create index set
-```
-
-A v tomto modelu vytvoříme jen:
-
-* `server-logs`
-
-Praktický základ:
-
-* **Title**: `Server Logs`
-* **Index prefix**: `server-logs`
-* **Analyzer**: `standard`
-* **Index shards**: `1`
-* **Index replicas**: `0`
-
-V části **Rotation & Retention** pak nastavíme retenci podle typu dat.
-
-Praktické mapování:
-
-* logy koncových stanic -> `Default index set`
-* síťové syslogy -> `Default index set`
-* logy serverů včetně AD a bezpečnostních událostí -> index set `server-logs`
-
-📌 Pokud organizace spadá do režimu vyšších povinností, je samostatný index set pro serverové a bezpečnostní logy prakticky nutnost.  
-📌 Pokud mají dva typy logů stejnou retenci, samostatný stream stačí a další index set jen zbytečně přidává správu navíc.
-
----
-
-### 4. Založení prvních inputů a routování do správných streamů
-
-Po instalaci Graylogu ještě žádná data sama netečou. Další krok je vytvoření inputů.
-
-V menší organizaci bývá praktický začátek:
-
-* **Beats input** pro Winlogbeat
-* **Syslog UDP** nebo **Syslog TCP** pro síťové prvky
-
-Inputy otevřeme v:
-
-```text
-System / Inputs
-```
-
-#### 4.1 Beats input pro Winlogbeat
-
-1. V `System / Inputs` v poli **Select input** vybereme `Beats`.
-2. Klikneme na **Launch new input**.
-3. Vyplníme minimálně:
-   * **Title**: `Winlogbeat`
-   * **Bind address**: `0.0.0.0`
-   * **Port**: `5044`
-4. Pokud nemáme důvod input vázat jen na jeden uzel, zvolíme **Global**.
-5. Klikneme na **Launch input**.
-
-Pak se otevře **Input Setup Wizard**. Ten je potřeba dokončit, jinak input ještě neběží.
-
-Praktický postup v průvodci:
-
-1. zvolíme **Skip Illuminate**
-2. v části routování vybereme **Create Stream**
-3. jako název streamu zadáme například `Windows Endpoints`
-4. jako **Index Set** ponecháme `Default index set`
-5. dokončíme průvodce přes **Start Input**
-
-#### 4.2 Syslog input pro síťové prvky
-
-Stejný princip použijeme pro MikroTik a UniFi:
-
-1. v `System / Inputs` vybereme `Syslog UDP` nebo `Syslog TCP`
-2. klikneme na **Launch new input**
-3. nastavíme port podle návrhu prostředí
-4. zvolíme **Global**
-5. po spuštění dokončíme **Input Setup Wizard**
-
-V routování nastavíme například:
-
-* stream `Network Syslog`
-* index set `Default index set`
-
-Praktická pravidla:
-
-* pokud není důvod k izolaci na konkrétní uzel, použijeme **Global input**
-* pokud to zdroj podporuje, je spolehlivější **TCP** než **UDP**
-* input bez dokončeného **Input Setup Wizard** ještě není v plném provozu
-* stream a index set je lepší určit hned při vzniku inputu
-* serverové a bezpečnostní logy je vhodné směrovat do samostatného streamu s delší retencí
-
-#### 4.3 Jak oddělit koncové stanice a servery
-
-Pokud chceme mít logy koncových stanic na `30 dní`, ale logy serverů na `12` nebo `18 měsíců`, nestačí jen jeden společný stream.
-
-Praktický postup:
-
-1. vytvoříme stream `Windows Endpoints` s index setem `Default index set`
-2. vytvoříme druhý stream `Server Logs`
-3. tomuto streamu přiřadíme index set `server-logs`
-4. do streamu `Server Logs` přidáme pravidla například pro:
-   * hostname serverů a doménových řadičů
-   * `winlogbeat_winlog_channel:"Security"`
-   * `winlogbeat_winlog_channel:"Microsoft-Windows-PowerShell/Operational"`
-   * `winlogbeat_winlog_channel:"Microsoft-Windows-Sysmon/Operational"`
-   * `winlogbeat_winlog_channel:"Directory Service"`
-
-Stream vytvoříme v:
-
-```text
-Streams
-```
-
-Tím získáme:
-
-* kratší retenci pro koncové stanice a síťové logy v `Default index set`
-* delší retenci pro serverové a bezpečnostní logy
-* jednodušší dashboardy, alerty a oprávnění
-
----
-
-### 5. První uživatelé a přístupy v Graylog Open
-
-Graylog používá role i sdílení entit. V Open edici je ale potřeba počítat s tím, že možnosti sdílení jsou jednodušší než v Enterprise.
-
-V aktuálním UI otevřeme:
-
-```text
-System / Users and Teams
-```
-
-Na kartě **Users** klikneme na:
-
-```text
-Create user
-```
-
-Praktický základ:
-
-1. vytvořit osobní administrátorský účet pro správce
-2. vestavěný účet `admin` ponechat spíš jako nouzový účet
-3. běžným technikům dát roli `Reader`
-4. jen uživatelům, kteří mají spravovat Graylog, dát `Admin`
-
-Praktická poznámka pro Open edici:
-
-* dokumentace uvádí, že **Graylog Open** umí sdílení jen přes **Share with Everyone**
-* pokud tedy chceme, aby běžní technici viděli společné dashboardy nebo saved searches, je v Open edici nejjednodušší tyto entity sdílet právě takto
-
-Prakticky to znamená:
-
-1. otevřeme například dashboard nebo saved search
-2. klikneme na **Share**
-3. zvolíme **Share with Everyone**
-4. nastavíme úroveň přístupu, typicky `Viewer`
-
-Pokud chceme zkontrolovat dostupné role, otevřeme:
-
-```text
-System / Roles
-```
-
-📌 Každý uživatel musí mít alespoň roli `Reader` nebo `Admin`.  
-📌 Samotná role nestačí ke všemu. U entit, jako jsou dashboardy nebo saved searches, stále hraje roli sdílení.
-
----
-
-### 6. SMTP pro budoucí e-mailové alerty
-
-Pokud chceme v budoucnu používat e-mailové alerty, je rozumné SMTP nastavit hned na začátku.
+### 1. Veřejná URL a HTTPS
 
 Na `graylog01` upravíme:
 
@@ -296,7 +21,160 @@ Na `graylog01` upravíme:
 /etc/graylog/server/server.conf
 ```
 
-a doplníme například:
+```ini
+http_external_uri = https://logs.example.cz/
+```
+
+📌 Hodnota musí být URL, kterou používají uživatelé. Pokud je před Graylogem reverzní proxy, uvedeme její výslednou HTTPS adresu. Potom:
+
+```bash
+sudo systemctl restart graylog-server
+sudo systemctl --no-pager --full status graylog-server
+```
+
+V prohlížeči ověříme platný certifikát, přihlášení a to, že odkazy generované Graylogem neobsahují interní hostname ani HTTP.
+
+---
+
+### 2. Retence v index setech
+
+Otevřeme:
+
+```text
+System / Indices
+```
+
+U každého index setu použijeme **Edit** a v části **Rotation & Retention** ponecháme doporučenou volbu **Data Tiering**. V Graylogu Open ponecháme **Warm Tier** vypnutý; warm tier vyžaduje Enterprise licenci. Volba **Legacy (Deprecated)** a strategie **Index Time Size Optimizing** nejsou pro nové nastavení doporučené.
+
+Nejdůležitější položky jsou:
+
+* **Min. in storage**: nejkratší doba, po kterou mají data zůstat uložená
+* **Max. in storage**: horní hranice, po jejímž dosažení Graylog data odstraní
+
+📌 **Hodnoty Min. a Max. in storage nenastavujeme stejně.** Rozdíl dává Graylogu prostor pro práci s celými indexy; výchozích `30 days / 40 days` je vhodný základ pro běžná data bez delšího retenčního požadavku.
+
+#### Praktické hodnoty
+
+| Použití | Min. in storage | Max. in storage |
+|---|---:|---:|
+| `Default index set` pro běžné endpointy a síťové logy | 30 dní | 40 dní |
+| `server-logs` mimo regulovaný požadavek | 90 dní | 100 dní |
+| `server-logs` jako interně schválený základ pro nižší režim | 365 dní | 395 dní |
+| vybrané události ve vyšším režimu | 550 dní | 580 dní |
+
+📌 U **nižšího režimu** vyhláška č. 410/2025 Sb. neurčuje pevný počet dnů. Dobu uchování stanovíme podle bezpečnostních potřeb, hodnocení rizik, smluvních požadavků a interní směrnice; `365/395` je pouze praktický výchozí návrh.
+
+⚠️ U **vyššího režimu** vyhláška č. 409/2025 Sb. vyžaduje uchovat určené bezpečnostní a relevantní provozní události nejméně 18 měsíců. Hodnoty `550/580` poskytují rezervu vůči rozdílné délce kalendářních měsíců. Nestačí ale pouze nastavit retenci: organizace musí určit sledované události a zajistit, aby všechny skončily v odpovídajícím index setu. Může jít i o vybrané události z koncových stanic nebo síťových prvků.
+
+Před prodloužením retence spočítáme kapacitu z reálného denního ingestu:
+
+```text
+potřebná kapacita ≈ průměrný denní přírůstek × počet dnů × 1,2
+```
+
+⚠️ Rezerva `20 %` je minimum pro růst a provozní špičky. Retenci nezvyšujeme, pokud by tím mohl Data Node zaplnit disk.
+
+Vzorec předpokládá `0` replik a nezahrnuje snapshoty ani zálohy. Po přidání replik nebo lokálního snapshot repository jejich kapacitu přičteme zvlášť.
+
+---
+
+### 3. Index set `server-logs`
+
+Koncové stanice a síťové syslogy se stejnou retencí ponecháme v `Default index set`. Samostatný index set vytvoříme jen pro data s odlišnou retencí:
+
+```text
+System / Indices / Create index set
+```
+
+Nastavíme:
+
+* **Title**: `Server Logs`
+* **Description**: `Logy serverů, AD a vybrané bezpečnostní události`
+* **Index prefix**: `server-logs`
+* **Analyzer**: `standard`
+* **Index shards**: `1`
+* **Index replicas**: `0`
+* **Rotation & Retention**: `Data Tiering`
+* **Warm Tier**: vypnuto
+* **Min./Max. in storage**: podle předchozí tabulky
+
+📌 Hodnoty `1 shard / 0 replicas` odpovídají instalaci s jediným Data Node. Replika na stejném Data Node nezvyšuje odolnost a zbytečně spotřebuje místo. Po přidání druhého Data Node lze nastavit jednu repliku, ale až po ověření kapacity.
+
+---
+
+### 4. Inputy
+
+Inputy vytváříme v:
+
+```text
+System / Inputs
+```
+
+Pro menší prostředí obvykle stačí:
+
+* `Beats` na `TCP/5044` pro Winlogbeat
+* `Syslog TCP` pro zařízení, která TCP podporují
+* `Syslog UDP` jen pro zdroje, které TCP neumějí
+
+📌 Po **Launch input** dokončíme **Input Setup Wizard**. V Graylogu 7.1 input v setup módu neběží. V edici Open obvykle zvolíme **Skip Illuminate** a jako existující cílový stream vybereme `All messages`, který používá `Default index set`.
+
+Input označíme jako **Global** jen tehdy, když má poslouchat na každém Graylog serveru. V popisovaném dvouserverovém řešení běží Graylog Server pouze na `graylog01`, takže může být input svázán s tímto uzlem.
+
+Porty inputů na firewallu povolíme jen ze zdrojových sítí. Beats input a Winlogbeat je vhodné zabezpečit TLS podle [samostatného článku]({% post_url 2026-04-15-Nastaveni-Winlogbeat-pro-odesilani-Windows-event-logu-do-Graylogu %}).
+
+---
+
+### 5. Stream `Server Logs` bez duplicit
+
+⚠️ Zpráva uložená současně přes streamy s různými index sety může zabírat místo v obou index setech. Serverové zprávy proto nesmějí zůstat zároveň v `Default index set`.
+
+Otevřeme:
+
+```text
+Streams / Create stream
+```
+
+Nastavíme:
+
+* **Title**: `Server Logs`
+* **Index Set**: `Server Logs`
+* **Remove matches from 'Default Stream'**: zapnout
+
+Potom přidáme pravidla podle **skutečných hostname serverů**. Například pro pole `winlogbeat_winlog_computer_name` vytvoříme jednu podmínku pro každý server a nastavíme, že zpráva musí splnit alespoň jedno pravidlo. Pokud máme spolehlivou jmennou konvenci, lze použít regulární výraz, například:
+
+```text
+^(DC|SRV|HV|DHCP)[0-9]+(\..+)?$
+```
+
+Před použitím regulárního výrazu jej ověříme nad reálnými hodnotami pole. Doménový řadič může například posílat FQDN místo krátkého jména.
+
+Stream následně spustíme. V `Search` omezíme hledání na `Server Logs` a ověříme nové zprávy. Změna streamu nepřesune starší zprávy; pravidla se použijí až na nově přijatá data.
+
+❌ Serverové logy **nerozpoznáváme pouze podle kanálu** `Security`, `System`, `Application`, PowerShell nebo Sysmon. Stejné kanály existují i na koncových stanicích a takové pravidlo by do dlouhé retence poslalo i jejich zprávy.
+
+---
+
+### 6. Uživatelé a oprávnění
+
+Otevřeme:
+
+```text
+System / Users and Teams / Users
+```
+
+1. Vytvoříme osobní účet každému správci.
+2. Vestavěný účet `admin` ponecháme jako nouzový a jeho heslo uložíme bezpečně.
+3. Běžným technikům přidělíme pouze potřebné role, typicky `Reader`.
+4. Přístup ke streamům, dashboardům a uloženým hledáním udělíme přes jejich nabídku **Share**.
+5. U sdílených entit nastavíme nejnižší potřebnou úroveň, typicky `Viewer`.
+
+📌 Samotná role `Reader` automaticky neznamená přístup ke každému streamu nebo dashboardu. Dostupné možnosti sdílení se mohou lišit podle licence a zapnutých funkcí, proto se řídíme volbami zobrazenými v konkrétní instalaci.
+
+---
+
+### 7. SMTP
+
+V `/etc/graylog/server/server.conf` nastavíme například SMTP se STARTTLS:
 
 ```ini
 transport_email_enabled = true
@@ -306,84 +184,82 @@ transport_email_use_auth = true
 transport_email_auth_username = graylog@example.cz
 transport_email_auth_password = <HESLO>
 transport_email_use_tls = true
+transport_email_use_ssl = false
 transport_email_from_email = graylog@example.cz
 transport_email_web_interface_url = https://logs.example.cz/
 ```
 
-Poté restartujeme Graylog server:
+⚠️ Soubor obsahuje heslo, proto ověříme oprávnění:
 
 ```bash
+sudo chown root:graylog /etc/graylog/server/server.conf
+sudo chmod 640 /etc/graylog/server/server.conf
 sudo systemctl restart graylog-server
 ```
 
-Praktický test:
-
-1. otevřeme `Alerts / Notifications`
-2. klikneme na **Create notification**
-3. jako typ vybereme **Email Notification**
-4. použijeme **Execute Test Notification**
-
-Tím si ověříme, že SMTP funguje ještě předtím, než začneme vytvářet alerty.
-
-📌 `transport_email_web_interface_url` by měla odpovídat stejné veřejné adrese jako `http_external_uri`.
-
----
-
-### 7. Kontrola po prvním ingestu
-
-Jakmile do Graylogu začnou téct první data, uděláme krátkou provozní kontrolu.
-
-#### 7.1 Ověření inputů
-
-Otevřeme:
+Test provedeme přes:
 
 ```text
-System / Inputs
+Alerts / Notifications / Create notification / Email Notification
 ```
 
-Zkontrolujeme:
-
-* že inputy nejsou jen v setup módu
-* že přibývají zprávy
-* že nejsou vidět chyby při spuštění inputu
-
-#### 7.2 Ověření streamů a index setů
-
-Při vytváření inputů zkontrolujeme, že:
-
-* logy koncových stanic tečou do streamu `Windows Endpoints` a používají `Default index set`
-* logy serverů tečou do streamu `Server Logs` a používají `server-logs`
-* síťové logy tečou do streamu `Network Syslog` a používají `Default index set`
-
-#### 7.3 Ověření polí na reálné zprávě
-
-V `Search` si otevřeme jednu reálnou Windows zprávu a zkontrolujeme pole:
-
-* `winlogbeat_winlog_computer_name`
-* `winlogbeat_winlog_channel`
-* `winlogbeat_event_code`
-
-Pokud tato pole nevidíme tak, jak očekáváme, je lepší problém vyřešit hned na začátku, než později opravovat dashboardy, saved searches nebo alerty.
-
-#### 7.4 Ověření Data Node a journalu
-
-Nakonec zkontrolujeme:
-
-* že je Data Node připojený
-* že journal neroste neobvykle rychle
-* že se v prostředí neobjevují dlouhodobé backlogy
-* že zdroje mají správně synchronizovaný čas
-
-To je důležité hlavně v prvních dnech po nasazení. U režimu vyšších povinností je navíc nepřetržitá synchronizace jednotného času technických aktiv výslovný požadavek vyhlášky.
+V editoru použijeme **Execute Test Notification**. Pokud SMTP relay podporuje omezení podle IP adresy, je bezpečnější vytvořit samostatný účet nebo relay pravidlo pouze pro `graylog01`.
 
 ---
 
-## Shrnutí
+### 8. Provozní kontrola
 
-✅ Po instalaci je vhodné nejdřív nastavit `http_external_uri` a ověřit výslednou URL  
-✅ Retenci a rotaci nastavujeme přímo přes `System / Indices`  
-✅ `Default index set` může zůstat pro běžné endpointy a síťové logy  
-✅ Pro ZoKB dává smysl mít delší retenci v index setu `server-logs`  
-✅ Každý input je potřeba nejen spustit, ale i dokončit v `Input Setup Wizard`  
-✅ V Graylog Open je praktické počítat s jednoduchým modelem rolí a sdílení  
-✅ SMTP a první provozní kontrolu je lepší udělat hned na začátku
+Po prvním ingestu zkontrolujeme:
+
+1. `System / Inputs`: input je spuštěný, není v setup módu a nemá chyby v **Input Diagnosis**.
+2. `Streams`: nové serverové zprávy jsou v `Server Logs` a nejsou v `All messages`/defaultním index setu.
+3. `System / Indices`: indexy jsou zdravé a roste očekávaný index set.
+4. `Search`: na reálné zprávě existují očekávaná pole a timestamp odpovídá času události.
+5. Disk Data Node: je dostatek volného místa a indexová data rostou podle očekávání.
+6. Journal na Graylog Serveru: fronta se za běžného provozu nezvětšuje a disk má dostatečnou rezervu.
+7. Čas: Graylog, Data Node, MongoDB i zdroje používají synchronizovaný čas.
+
+U Winlogbeatu při výchozím prefixování ověříme hlavně:
+
+```text
+winlogbeat_winlog_computer_name
+winlogbeat_winlog_channel
+winlogbeat_event_code
+```
+
+---
+
+### 9. Zálohy a obnova
+
+⚠️ Záloha pouze celé VM za běhu není dostatečný plán obnovy. Zálohujeme odděleně:
+
+* MongoDB, která obsahuje konfiguraci Graylogu, uživatele, streamy a dashboardy
+* konfigurace a certifikáty z `/etc/graylog/` a reverzní proxy
+* hodnoty `password_secret` a `root_password_sha2`
+* indexová data pomocí podporovaných snapshotů Data Node/OpenSearch, pokud je vyžadována jejich obnova
+
+❌ Nekopírujeme pouze živý adresář Data Node jako konzistentní zálohu.
+
+✅ Nejméně jednou za rok provedeme test obnovy do odděleného prostředí a zapíšeme skutečný čas obnovy.
+
+---
+
+### Shrnutí
+
+✅ Nastavíme správnou veřejnou HTTPS adresu a ověříme generované odkazy.  
+✅ Běžná data ponecháme v `Default index set`; samostatný index set vytváříme jen pro odlišnou retenci.  
+✅ Serverový stream odebere odpovídající zprávy z výchozího streamu, aby nevznikaly duplicity.  
+✅ Inputy dokončíme v **Input Setup Wizard** a porty povolíme jen ze zdrojových sítí.  
+✅ Nastavíme osobní účty, SMTP, provozní kontrolu a otestovaný plán obnovy.
+
+---
+
+### Zdroje
+
+* [Graylog: Index Model](https://go2docs.graylog.org/current/setting_up_graylog/index_model.html)
+* [Graylog: Data Tiering](https://go2docs.graylog.org/current/setting_up_graylog/data_tiering.htm)
+* [Graylog: Set Up an Input](https://go2docs.graylog.org/current/getting_in_log_data/setup_an_input.htm)
+* [Graylog: Streams](https://go2docs.graylog.org/current/making_sense_of_your_log_data/streams.html)
+* [Graylog: Backup and Restore Best Practices](https://go2docs.graylog.org/current/setting_up_graylog/backup_considerations.htm)
+* [Vyhláška č. 409/2025 Sb. pro vyšší režim](https://www.zakonyprolidi.cz/cs/2025-409)
+* [Vyhláška č. 410/2025 Sb. pro nižší režim](https://www.zakonyprolidi.cz/cs/2025-410)

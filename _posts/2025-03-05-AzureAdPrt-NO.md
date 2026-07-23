@@ -1,121 +1,163 @@
 ---
-title: "Jak řešit problém s Azure AD: AzureAdPrt = NO"
+title: "Jak řešit AzureAdPrt = NO u Microsoft Entra hybrid join"
 date: "2025-03-05"
-tags: [Azure AD, Hybrid Join, PRT, Troubleshooting]
+tags: [Microsoft Entra ID, Hybrid Join, PRT, Troubleshooting]
 layout: post
 ---
-# Jak řešit problém s Azure AD: AzureAdPrt = NO
 
-Při hybridním připojení zařízení k Azure AD se může stát, že některé počítače zůstanou ve stavu **"Čekající" (Pending)** a registrace neproběhne úspěšně. Jedním z klíčových indikátorů tohoto problému je hodnota **AzureAdPrt = NO**, která znamená, že zařízení nemá platný **Primary Refresh Token (PRT)**. Bez něj se uživatelé nemohou správně ověřovat a využívat funkce Azure AD. V tomto článku si ukážeme, jak tento problém diagnostikovat a vyřešit.
+## Jak řešit AzureAdPrt = NO u Microsoft Entra hybrid join
 
----
+`AzureAdPrt` popisuje stav **Primary Refresh Tokenu přihlášeného uživatele**. Není to stav registrace počítače. Zařízení proto může být správně hybridně připojené a konkrétní uživatel přesto nemusí mít PRT. Stav **Pending** v Microsoft Entra ID naopak znamená, že synchronizovaný objekt zařízení ještě nedokončil registraci.
 
-## 1. Ověřte, zda je uživatel přihlášen správným účtem
-Zařízení musí být přihlášeno doménovým účtem, který je synchronizován s Azure AD. Pokud je uživatel přihlášen **místním účtem**, PRT nebude vydán.
+Tyto dva problémy je potřeba diagnostikovat odděleně.
 
-### Jak zkontrolovat účet:
-1. Otevřete **Příkazový řádek (cmd) jako správce**.
-2. Spusťte příkaz:
-   ```powershell
-   whoami
-   ```
-3. Pokud výstup **neobsahuje** `DOMAIN\username`, je uživatel přihlášen místním účtem.
-
-**Řešení:** Odhlaste uživatele a přihlaste se firemním účtem, který je synchronizován s Azure AD.
+📌 **Nejdřív vždy rozlišíme, zda řešíme registraci zařízení, nebo PRT konkrétního uživatele.**
 
 ---
 
-## 2. Ověřte, zda organizace neblokuje přihlášení do Azure AD
-Pokud jsou v **Azure AD Conditional Access** nastaveny restriktivní politiky, mohou blokovat vydávání PRT.
+### 1. Rozlišení stavu zařízení a uživatele
 
-### Jak to ověřit:
-1. Otevřete **prohlížeč Edge nebo Chrome**.
-2. Přihlaste se na **https://myaccount.microsoft.com** firemním účtem.
-3. Pokud přihlášení selže, je pravděpodobně **blokováno politikou**.
+Nejdřív otevřeme běžný, **nepovýšený** příkazový řádek v relaci uživatele, kterému nefunguje SSO:
 
-**Řešení:** Zkontrolujte nastavení **Conditional Access v Azure AD** a ujistěte se, že zařízení mají povolený přístup.
+```powershell
+whoami
+dsregcmd /status
+```
 
----
+V části **Device State** očekáváme u dokončeného hybridního připojení:
 
-## 3. Ověřte konektivitu k Azure AD
-Zařízení musí mít přístup k následujícím službám:
-- `login.microsoftonline.com`
-- `device.login.microsoftonline.com`
-- `enterpriseregistration.windows.net`
+```text
+AzureAdJoined : YES
+DomainJoined  : YES
+```
 
-### Jak zkontrolovat konektivitu:
-1. Otevřete **Příkazový řádek jako administrátor**.
-2. Spusťte test DNS:
-   ```powershell
-   nslookup login.microsoftonline.com
-   ```
-3. Ověřte připojení:
-   ```powershell
-   Test-NetConnection login.microsoftonline.com -Port 443
-   ```
+V části **SSO State** kontrolujeme uživatelský token:
 
-**Řešení:** Pokud testy selžou, upravte **firewall nebo proxy**, aby umožňovaly přístup k těmto doménám.
+```text
+AzureAdPrt : YES
+```
+
+Pokud je `AzureAdJoined : NO`, řešíme registraci zařízení. Pokud je `AzureAdJoined : YES`, ale `AzureAdPrt : NO`, řešíme získání PRT konkrétního uživatele.
+
+📌 `NgcSet : NO` pouze znamená, že uživatel nemá vytvořený klíč Windows Hello for Business. Samo o sobě to není důkaz chyby PRT a kvůli diagnostice PRT není vhodné Windows Hello vypínat.
 
 ---
 
-## 4. Zkontrolujte Windows Hello for Business
-Pokud je Windows Hello for Business povolen, ale není správně nakonfigurován, může to bránit vydávání PRT.
+### 2. Diagnostika chybějícího PRT
 
-### Jak zjistit stav Windows Hello:
-1. Otevřete **PowerShell jako správce**.
-2. Spusťte:
-   ```powershell
-   dsregcmd /status
-   ```
-3. Hledejte řádek **"NgcSet"**. Pokud je **NO**, Windows Hello není správně nastaveno.
+U `AzureAdPrt : NO` zkontrolujeme ve stejné části výstupu zejména:
 
-**Řešení:** Ověřte **Group Policy Management Console (GPMC)**:
-- `Computer Configuration > Policies > Administrative Templates > Windows Components > Windows Hello for Business`
-- Dočasně zkuste deaktivovat Windows Hello for Business a otestujte PRT.
+* `Previous Prt Attempt`
+* `Attempt Status`
+* `User Identity`
+* `HTTP Error` a `HTTP status`
+* `Server Error Code` a `Server Error Description`
+* `Correlation ID`
 
----
+Pokud je `AzureAdPrtUpdateTime` starší než čtyři hodiny, zamkneme a odemkneme relaci uživatele a stav zkontrolujeme znovu:
 
-## 5. Resetujte síťové nastavení a proxy
-Nevhodně nastavená proxy může blokovat komunikaci s Azure AD.
+```powershell
+rundll32.exe user32.dll,LockWorkStation
+```
 
-### Jak resetovat proxy:
-1. Otevřete **PowerShell jako administrátor**.
-2. Spusťte:
-   ```powershell
-   netsh winhttp reset proxy
-   ```
-3. Restartujte **službu Netlogon**:
-   ```powershell
-   net stop netlogon
-   net start netlogon
-   ```
-4. Restartujte zařízení a znovu ověřte PRT.
+Podrobnosti k pokusu o získání PRT najdeme v **Event Viewer**:
 
----
+```text
+Applications and Services Logs
+└─ Microsoft
+   └─ Windows
+      └─ AAD
+         ├─ Operational
+         └─ Analytic
+```
 
-## 6. Odstranění a nové připojení zařízení k Azure AD
-Pokud žádné z výše uvedených řešení nefunguje, zkuste zařízení **odregistrovat a znovu připojit**.
+Událost `1006` označuje začátek pokusu, `1007` jeho výsledek. Analytický log je nutné v Event Vieweru nejdřív zobrazit a povolit přes **View > Show Analytic and Debug Logs**. Podle `Correlation ID` a času pak dohledáme odpovídající přihlášení také v **Microsoft Entra admin center > Identity > Monitoring & health > Sign-in logs**.
 
-### Jak odregistrovat zařízení:
-1. Otevřete **PowerShell jako administrátor**.
-2. Spusťte příkaz:
-   ```powershell
-   dsregcmd /leave
-   ```
-3. Restartujte zařízení.
-
-### Jak znovu připojit zařízení:
-1. Otevřete **Settings > Accounts > Access work or school**.
-2. Klikněte na **Connect** a připojte zařízení k Azure AD.
+📌 Úspěšné přihlášení na webový portál pouze ověřuje interaktivní přihlášení. Neprokazuje, že klient získal PRT ani že jej neblokuje Conditional Access.
 
 ---
 
-## Shrnutí
-Pokud vaše zařízení v Azure AD zůstává ve stavu **"Čekající"** a hodnota **AzureAdPrt = NO**, zkuste následující kroky:
-✅ Přihlaste se doménovým účtem, ne místním účtem.  
-✅ Ověřte, zda nejsou blokovány Azure AD endpointy.  
-✅ Zkontrolujte **Conditional Access** politiky.  
-✅ Resetujte proxy a firewallová pravidla.  
-✅ Pokud nic nepomůže, odregistrovat a znovu připojit zařízení.  
+### 3. Diagnostika registrace zařízení a stavu Pending
 
-Tento postup vám pomůže vyřešit problém a úspěšně registrovat zařízení v **Hybrid Azure AD Join**. Pokud problém přetrvává, je možné, že je nutná hlubší diagnostika pomocí **Azure AD logs a Event Viewer**.
+Pro stav zařízení otevřeme příkazový řádek **jako správce** a spustíme:
+
+```powershell
+dsregcmd /status
+```
+
+Kromě **Device State** zkontrolujeme část **Diagnostic Data**, zejména fázi registrace, klientský a serverový chybový kód a případnou URL s diagnostikou. Události registrace jsou zde:
+
+```text
+Applications and Services Logs
+└─ Microsoft
+   └─ Windows
+      └─ User Device Registration
+         └─ Admin
+```
+
+Ověříme také, že:
+
+* objekt počítače je v OU synchronizované pomocí Microsoft Entra Connect Sync,
+* je správně nakonfigurovaný Service Connection Point (SCP),
+* replikace Active Directory a synchronizace do Entra ID probíhají bez chyby,
+* zařízení dosáhne na registrační služby Microsoftu.
+
+---
+
+### 4. Kontrola sítě a proxy
+
+Minimálně ověříme DNS a TCP 443:
+
+```powershell
+Resolve-DnsName login.microsoftonline.com
+Test-NetConnection login.microsoftonline.com -Port 443
+Test-NetConnection device.login.microsoftonline.com -Port 443
+Test-NetConnection enterpriseregistration.windows.net -Port 443
+```
+
+Stav systémové WinHTTP proxy zobrazíme bez změny konfigurace:
+
+```powershell
+netsh winhttp show proxy
+```
+
+PRT a registrace zařízení používají také systémový kontext. Proxy, TLS inspekce a firewall proto musí fungovat nejen v prohlížeči uživatele. Přesný seznam povolených adres vždy převezmeme z aktuální dokumentace Microsoft 365 a Microsoft Entra.
+
+⚠️ **Příkaz `netsh winhttp reset proxy` nespouštíme naslepo.** V organizaci se spravovanou proxy může odstranit platné nastavení a způsobit další výpadky.
+
+---
+
+### 5. Opakování automatické registrace
+
+Po odstranění příčiny můžeme na hybridně připojovaném počítači spustit vestavěnou úlohu:
+
+```powershell
+Start-ScheduledTask -TaskPath "\Microsoft\Windows\Workplace Join\" -TaskName "Automatic-Device-Join"
+```
+
+Výsledek znovu ověříme pomocí `dsregcmd /status` a logu **User Device Registration > Admin**.
+
+`dsregcmd /leave` použijeme až jako řízený poslední krok, například u prokazatelně zastaralé registrace po přesunu objektu mimo synchronizační rozsah:
+
+```powershell
+dsregcmd /leave
+Restart-Computer
+```
+
+Po restartu necháme hybridní registraci znovu provést úlohou **Automatic-Device-Join**. Hybridně připojený počítač nepřipojujeme ručně přes **Access work or school > Connect**, protože tím nevytváříme správně řízený Microsoft Entra hybrid join.
+
+---
+
+### Shrnutí
+
+✅ `AzureAdPrt` je stav přihlášeného uživatele, nikoli objektu zařízení.  
+✅ PRT kontrolujeme v nepovýšené relaci postiženého uživatele.  
+✅ `NgcSet : NO` neznamená poruchu PRT.  
+✅ Stav Pending řešíme přes diagnostiku registrace, synchronizaci a úlohu `Automatic-Device-Join`.  
+✅ Proxy před změnou nejdřív zkontrolujeme a zařízení ručně nepřevádíme na jiný typ připojení.
+
+### Zdroje
+
+* [Troubleshoot Microsoft Entra hybrid joined devices](https://learn.microsoft.com/en-us/entra/identity/devices/troubleshoot-hybrid-join-windows-current)
+* [Troubleshoot primary refresh token issues on Windows devices](https://learn.microsoft.com/en-us/entra/identity/devices/troubleshoot-primary-refresh-token)
+* [Pending devices in Microsoft Entra ID](https://learn.microsoft.com/en-us/troubleshoot/entra/entra-id/dir-dmns-obj/pending-devices)

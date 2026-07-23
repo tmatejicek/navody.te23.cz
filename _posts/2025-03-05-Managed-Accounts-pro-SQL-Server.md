@@ -1,208 +1,170 @@
 ---
 title: "Použití Managed Service Accounts pro SQL Server"
 date: "2025-03-05"
-tags: [MSA, gMSA, SQL Server, Active Directory]
+tags: [sMSA, gMSA, SQL Server, Active Directory]
 layout: post
 ---
 
 ## Použití Managed Service Accounts pro SQL Server
 
-Managed Service Accounts (MSA) a Group Managed Service Accounts (gMSA) jsou moderní způsob, jak zabezpečit SQL Server instance bez nutnosti spravovat hesla. V tomto návodu si ukážeme, jak je správně nastavit a použít.
+Spravované servisní účty odstraňují ruční správu hesel služeb. Pro jeden samostatný SQL Server můžeme použít **standalone Managed Service Account (sMSA)**. Pro více serverů, Always On Availability Groups nebo failover cluster instance použijeme **group Managed Service Account (gMSA)**.
 
 ---
 
-## 1. Začneme ověřením prostředí
+### 1. Požadavky a volba účtu
 
-Než se pustíme do konfigurace, ujistíme se, že splňujeme následující podmínky:
-- Používáme **Windows Server 2012 nebo novější**.
-- SQL Server běží na **doménově připojeném serveru**.
-- Máme přístup k **Active Directory** a oprávnění k vytváření spravovaných účtů.
-- Pokud plánujeme **Group Managed Service Account (gMSA)**, máme **doménový řadič Windows Server 2012 nebo novější**.
+* SQL Server musí běžet na doménově připojeném Windows Serveru.
+* gMSA pro SQL Server vyžaduje Windows Server 2012 R2 nebo novější.
+* SQL Server podporuje gMSA od SQL Serveru 2014 pro samostatné instance a od SQL Serveru 2016 pro failover cluster instance a Availability Groups.
+* sMSA je vázaný na jediný počítač a není vhodný pro cluster.
+* Pro službu Database Engine a SQL Server Agent je vhodné použít samostatné účty.
+
+Příklady používají doménu `MOJEDOMENA`, server `SQL01` a skupinu `SQL-Servers-gMSA`. Názvy upravíme podle prostředí.
+
+📌 **sMSA volíme pro jednu službu na jednom serveru. gMSA použijeme všude, kde stejný účet potřebuje více serverů nebo cluster.**
 
 ---
 
-## 2. Vytvoření Managed Service Account (MSA)
+### 2. Varianta A: sMSA pro jeden SQL Server
 
-### 2.1 Ověření a vytvoření KDS root klíče
+Na počítači s modulem **ActiveDirectory** vytvoříme účet omezený na jeden server a přiřadíme jej počítači:
 
-Než vytvoříme MSA účet, musíme ověřit, zda existuje **KDS root klíč**, který je nutný pro správu hesel gMSA účtů.
+```powershell
+New-ADServiceAccount -Name SQLMSA -RestrictToSingleComputer
+Add-ADComputerServiceAccount -Identity SQL01 -ServiceAccount SQLMSA
+```
 
-Na **doménovém řadiči** otevřeme PowerShell jako administrátor a spustíme příkaz:
+KDS root key pro sMSA nepotřebujeme.
+
+Na serveru `SQL01` doinstalujeme modul Active Directory, účet nainstalujeme a otestujeme:
+
+```powershell
+Install-WindowsFeature RSAT-AD-PowerShell
+Install-ADServiceAccount -Identity SQLMSA
+Test-ADServiceAccount -Identity SQLMSA
+```
+
+✅ Výsledek posledního příkazu musí být `True`.
+
+---
+
+### 3. Varianta B: gMSA pro více SQL serverů
+
+#### 3.1 KDS root key
+
+gMSA vyžaduje KDS root key. Jeho existenci ověříme na doménovém řadiči:
 
 ```powershell
 Get-KdsRootKey
 ```
 
-Pokud se nezobrazí žádný výstup, znamená to, že klíč nebyl vytvořen. Vytvoříme ho příkazem:
+Pokud neexistuje, v produkční doméně jej vytvoříme a před prvním použitím vyčkáme alespoň deset hodin na replikaci:
 
 ```powershell
 Add-KdsRootKey -EffectiveImmediately
 ```
 
-⚠ **Poznámka:** Na některých verzích Windows Serveru trvá až **10 hodin**, než je klíč dostupný. Pokud ho chceme použít ihned (například pro testovací účely), můžeme vytvořit klíč s okamžitou platností:
+Pouze v jediné DC testovací doméně lze čekání obejít zpětným datováním klíče:
 
 ```powershell
 Add-KdsRootKey -EffectiveTime ((Get-Date).AddHours(-10))
 ```
 
-Po vytvoření klíče můžeme pokračovat v konfiguraci MSA.
+⚠️ **Zpětné datování nepoužíváme v produkční doméně s více doménovými řadiči.**
 
-### 2.2 Vytvoříme MSA v Active Directory
+#### 3.2 Skupina serverů a účet
 
-Na **doménovém řadiči** otevřeme PowerShell jako administrátor a spustíme příkaz:
-
-```powershell
-New-ADServiceAccount -Name SQLMSA -DNSHostName sqlserver.mojedomena.local -PrincipalsAllowedToRetrieveManagedPassword sqlserver$
-```
-
-📌 **Co děláme?**
-- `SQLMSA` je název účtu, který použijeme pro SQL Server.
-- `-DNSHostName` odpovídá názvu serveru, kde bude SQL Server běžet.
-- `-PrincipalsAllowedToRetrieveManagedPassword` definuje, který server může tento účet používat.
-
----
-
-## 3. Příprava SQL Serveru pro použití MSA
-
-### 3.1 Instalace modulu Active Directory
-
-Aby SQL Server mohl používat Managed Service Accounts, musí mít nainstalovaný modul Active Directory.
-
-📌 Ověříme dostupnost modulu:
+Do bezpečnostní skupiny přidáme **počítačové účty** všech SQL serverů:
 
 ```powershell
-Get-Module -ListAvailable | Where-Object { $_.Name -eq "ActiveDirectory" }
+New-ADGroup -Name "SQL-Servers-gMSA" -GroupScope Global -GroupCategory Security
+Add-ADGroupMember -Identity "SQL-Servers-gMSA" -Members "SQL01$","SQL02$"
 ```
 
-Pokud příkaz **nevrátí žádný výstup**, znamená to, že modul není nainstalovaný a musíme ho přidat.
-
-
-Pokud běžíme na Windows Serveru, nainstalujeme modul Active Directory pomocí:
+Potom vytvoříme gMSA:
 
 ```powershell
-Install-WindowsFeature -Name RSAT-AD-PowerShell
+New-ADServiceAccount `
+  -Name SQLgMSA `
+  -DNSHostName SQLgMSA.mojedomena.local `
+  -KerberosEncryptionType AES128,AES256 `
+  -PrincipalsAllowedToRetrieveManagedPassword "SQL-Servers-gMSA"
 ```
 
-### 3.2 Importujeme modul Active Directory
+📌 Příklad povoluje pouze AES. Nejdřív ověříme, že řadiče domény i podporované servery používají moderní Kerberos; DES nepovolujeme a závislost na RC4 raději odstraníme, než abychom ji bez ověření zachovali.
 
-Pokud byl modul nainstalován, ale stále nefunguje, ručně ho načteme:
+Po novém přidání počítače do skupiny je nejjistější cílový server restartovat, aby počítač získal aktuální členství. Na každém SQL serveru pak spustíme:
 
 ```powershell
-Import-Module ActiveDirectory
-```
-
-A ověříme, zda příkaz `Install-ADServiceAccount` existuje:
-
-```powershell
-Get-Command Install-ADServiceAccount
-```
-
-Pokud je modul správně načtený, můžeme pokračovat v nastavení MSA.
-
-### 3.3 Instalace MSA na SQL Server
-
-Na **SQL Serveru**, kde poběží databázová instance, spustíme PowerShell:
-
-```powershell
-Install-ADServiceAccount -Identity SQLMSA
-```
-
-Poté ověříme, zda je účet správně nainstalován:
-
-```powershell
-Test-ADServiceAccount -Identity SQLMSA
-```
-
-Pokud se vrátí **True**, účet je připraven.
-
----
-
-## 4. Nastavení SQL Serveru pro použití MSA
-
-### 4.1 Změníme účet služby SQL Server
-
-1. Otevřeme **SQL Server Configuration Manager**.
-2. Vybereme **SQL Server Services**.
-3. Klikneme pravým tlačítkem na **SQL Server (MSSQLSERVER)** a vybereme **Properties**.
-4. Na kartě **Log On** zadáme účet **`DOMAIN\SQLMSA$`** (nezapomeneme na `$` na konci!).
-5. Nevyplňujeme heslo – MSA ho spravuje automaticky.
-6. Uložíme změny a **restartujeme SQL Server**.
-
-### 4.2 Přidáme oprávnění v SQL Serveru
-
-Přihlásíme se do SQL Server Management Studia (SSMS) a spustíme následující příkaz:
-
-```sql
-CREATE LOGIN [DOMAIN\SQLMSA$] FROM WINDOWS;
-ALTER SERVER ROLE sysadmin ADD MEMBER [DOMAIN\SQLMSA$];
-```
-
-Tím zajistíme, že SQL Server bude mít potřebná oprávnění.
-
----
-
-## 5. Použití Group Managed Service Account (gMSA)
-
-Pokud plánujeme používat **gMSA pro více SQL serverů**, postupujeme takto:
-
-### 5.1 Vytvoříme gMSA v Active Directory
-
-Na doménovém řadiči spustíme PowerShell:
-
-```powershell
-New-ADServiceAccount -Name SQLgMSA -DNSHostName sqlserver.mojedomena.local -PrincipalsAllowedToRetrieveManagedPassword "SQLServersGroup"
-```
-
-📌 **Co děláme?**
-- `SQLgMSA` je název skupinového účtu.
-- `-PrincipalsAllowedToRetrieveManagedPassword` definuje doménovou skupinu (`SQLServersGroup`), která obsahuje všechny SQL servery, jež budou tento účet používat.
-
-### 5.2 Nainstalujeme gMSA na SQL Server
-
-Na **každém SQL Serveru**, který bude tento účet používat, spustíme:
-
-```powershell
+Install-WindowsFeature RSAT-AD-PowerShell
 Install-ADServiceAccount -Identity SQLgMSA
 Test-ADServiceAccount -Identity SQLgMSA
 ```
 
-Výstup **True** znamená, že účet je funkční.
-
-### 5.3 Přidáme gMSA jako účet služby SQL Server
-
-Stejně jako u MSA:
-- V **SQL Server Configuration Manageru** nastavíme službu SQL Server na běh pod účtem **`DOMAIN\SQLgMSA$`**.
-- Nevyplňujeme heslo.
-- Restartujeme SQL Server.
-
-### 5.4 Přidáme oprávnění v SQL Serveru
-
-V SSMS spustíme:
-
-```sql
-CREATE LOGIN [DOMAIN\SQLgMSA$] FROM WINDOWS;
-ALTER SERVER ROLE sysadmin ADD MEMBER [DOMAIN\SQLgMSA$];
-```
+✅ Výsledek musí být `True`.
 
 ---
 
-## 6. Ověříme funkčnost
+### 4. Nastavení služby SQL Server
 
-Nakonec ověříme, že SQL Server běží pod správným účtem. Spustíme v SSMS:
+Účet služby měníme výhradně přes **SQL Server Configuration Manager**, ne přes `services.msc`. Configuration Manager upraví také potřebná místní oprávnění, ochranu Service Master Key a související nastavení služby.
 
-```sql
-SELECT SUSER_NAME();
-```
+1. Otevřeme **SQL Server Configuration Manager**.
+2. Přejdeme do **SQL Server Services**.
+3. Otevřeme vlastnosti služby **SQL Server (MSSQLSERVER)** nebo příslušné pojmenované instance.
+4. Na kartě **Log On** zadáme `MOJEDOMENA\SQLMSA$` nebo `MOJEDOMENA\SQLgMSA$`.
+5. Pole pro heslo necháme prázdná.
+6. Změnu potvrdíme a službu restartujeme.
 
-Měli bychom vidět výstup **`DOMAIN\SQLMSA$`** nebo **`DOMAIN\SQLgMSA$`**.
+Stejným způsobem lze nastavit SQL Server Agent, ideálně pod jiným sMSA/gMSA.
+
+📌 Servisní účet nepřidáváme jako samostatný login do SQL Serveru a neudělujeme mu `sysadmin`. SQL Server používá pro interní oprávnění per-service SID (`NT SERVICE\MSSQLSERVER`, případně SID pojmenované instance), který instalace už správně vytvořila.
 
 ---
 
-## Shrnutí
+### 5. Ověření
 
-✅ **MSA** je vhodné pro **jednotlivé SQL servery**.  
-✅ **gMSA** umožňuje **sdílet jeden účet mezi více SQL servery**.  
-✅ **Odpadá nutnost správy hesel** – systém je mění automaticky.  
-✅ **Zabezpečení se zvyšuje**, protože přihlašovací údaje nejsou nikde uloženy ručně.
+V SQL Server Configuration Manageru musí být služba ve stavu **Running** pod očekávaným účtem. Účet ověříme také v SSMS:
 
-Tímto jsme úspěšně nastavili SQL Server pro běh pod Managed Service Accounts! 🎯
+```sql
+SELECT
+    servicename,
+    service_account,
+    status_desc,
+    startup_type_desc
+FROM sys.dm_server_services;
+```
+
+Pro SQL Server 2019 a starší vyžaduje tento pohled oprávnění `VIEW SERVER STATE`; pro SQL Server 2022 a novější `VIEW SERVER SECURITY STATE`.
+
+Pokud klienti používají Kerberos, ověříme registraci SPN a skutečný autentizační mechanismus:
+
+```powershell
+setspn -L MOJEDOMENA\SQLgMSA$
+setspn -Q MSSQLSvc/sql01.mojedomena.local:1433
+```
+
+```sql
+SELECT auth_scheme
+FROM sys.dm_exec_connections
+WHERE session_id = @@SPID;
+```
+
+U vzdáleného spojení má `auth_scheme` vrátit `KERBEROS`. Duplicitní nebo chybějící SPN nejdřív opravíme v Active Directory; neřešíme je přidáním servisního účtu do `sysadmin`.
+
+---
+
+### Shrnutí
+
+✅ sMSA používáme pro samostatnou službu na jednom serveru.  
+✅ gMSA používáme pro více serverů, FCI a Availability Groups.  
+✅ KDS root key je nutný pro gMSA, nikoli pro sMSA.  
+✅ Účet služby měníme přes SQL Server Configuration Manager.  
+❌ Servisnímu účtu nevytváříme SQL login s rolí `sysadmin`.  
+✅ Funkčnost ověřujeme přes `Test-ADServiceAccount`, `sys.dm_server_services` a podle potřeby SPN.
+
+### Zdroje
+
+* [Configure Windows service accounts and permissions](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-windows-service-accounts-and-permissions)
+* [Manage group Managed Service Accounts](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/group-managed-service-accounts/group-managed-service-accounts/manage-group-managed-service-accounts)
+* [sys.dm_server_services](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-server-services-transact-sql)

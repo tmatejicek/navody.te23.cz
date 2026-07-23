@@ -6,44 +6,85 @@ tags: [Proxmox, LXC, Backup, Troubleshooting]
 
 ## Jak vyřešit problém se zálohováním neprivilegovaných LXC kontejnerů na Proxmoxu
 
-Při zálohování LXC kontejnerů na Proxmoxu se můžete setkat s chybou typu:
+Při zálohování neprivilegovaného LXC kontejneru na NFS nebo CIFS se může objevit například:
 
-```
+```text
 INFO: tar: /mnt/pve/NAS02/dump/vzdump-lxc-104-2025_03_16-01_00_05.tmp: Cannot open: Permission denied
 ```
 
-Tento problém se obvykle týká neprivilegovaných LXC kontejnerů a jejich interakce se síťovým úložištěm. Důvodem je, že vzdump (nástroj na zálohování) využívá dočasný soubor ve složce úložiště, kam neprivilegovaný kontejner nemusí mít přístup. 
+`vzdump` běží na Proxmox hostiteli. Při záloze LXC ale používá mapované UID/GID neprivilegovaného kontejneru. Síťové úložiště nemusí tyto vlastníky, ACL nebo rozšířené atributy správně podporovat, a vytvoření dočasné pracovní oblasti proto selže.
 
-## **Řešení**: Změna dočasného adresáře pro vzdump
+📌 **Řešením je použít lokální pracovní adresář na Proxmox hostiteli a výsledný archiv dále ukládat na síťové úložiště.**
 
-Řešení spočívá v úpravě konfiguračního souboru `/etc/vzdump.conf`, kde nastavíme dočasnou složku na místní disk. 
+---
 
-### **Postup opravy**
-1. **Otevřete konfiguraci vzdump:**
-   ```bash
-   nano /etc/vzdump.conf
-   ```
+### 1. Ověření příčiny a volného místa
 
-2. **Přidejte nebo upravte řádek:**
-   ```bash
-   tmpdir: /var/tmp
-   ```
-   Tento řádek zajistí, že dočasné soubory budou ukládány do `/var/tmp`, což je lokální úložiště, které není ovlivněno oprávněními na síťových úložištích.
-
-3. **Uložte změny a zavřete soubor** (v nano stiskněte `CTRL + X`, pak `Y` a potvrďte `Enter`).
-
-4. **Spusťte zálohování znovu.**
-
-### **Proč to funguje?**
-- `/var/tmp` je lokální složka, kde nemají síťová oprávnění vliv.
-- Vyhnete se problémům s právy na síťových úložištích (NFS, CIFS).
-- Zálohování bude probíhat bez chyb a neprivilegované kontejnery nebudou mít problém s přístupem k dočasným souborům.
-
-## **Shrnutí**
-Pokud narazíte na problém se zálohováním neprivilegovaných LXC kontejnerů na Proxmoxu, přidejte do `/etc/vzdump.conf` řádek:
+Na Proxmox hostiteli zkontrolujeme konfiguraci a volné místo v lokálním dočasném adresáři:
 
 ```bash
+grep -E '^[[:space:]]*tmpdir:' /etc/vzdump.conf
+df -h /var/tmp
+stat -c '%a %U:%G %n' /var/tmp
+```
+
+Standardní `/var/tmp` má obvykle oprávnění `1777 root:root`. Lokální disk musí mít dostatek volného místa. U LXC může dočasná pracovní kopie, zejména v režimu `suspend`, potřebovat prostor blížící se velikosti použitých dat kontejneru.
+
+---
+
+### 2. Nejdřív jednorázový test
+
+Než změníme globální konfiguraci, otestujeme jeden kontejner. Nahradíme `104` a `NAS02` skutečným CT ID a ID úložiště:
+
+```bash
+vzdump 104 --storage NAS02 --mode snapshot --compress zstd --tmpdir /var/tmp
+```
+
+Pokud záloha proběhne, příčinou byla dočasná oblast na síťovém úložišti.
+
+---
+
+### 3. Trvalé nastavení
+
+Otevřeme globální konfiguraci na každém Proxmox uzlu, kde se záloha může spustit:
+
+```bash
+nano /etc/vzdump.conf
+```
+
+Přidáme nebo upravíme jediný aktivní řádek:
+
+```text
 tmpdir: /var/tmp
 ```
 
-Tato jednoduchá úprava zabrání problémům s oprávněními a umožní bezproblémové zálohování neprivilegovaných kontejnerů.
+Změna se použije při dalším spuštění `vzdump`; restart hostitele není potřeba. Nastavení ověříme:
+
+```bash
+grep -E '^[[:space:]]*tmpdir:' /etc/vzdump.conf
+```
+
+⚠️ **`tmpdir` musí být na rychlém lokálním souborovém systému s dostatečnou kapacitou.** Nepoužívejte RAM disk ani malý kořenový oddíl, který by záloha mohla zaplnit. Pokud `/var/tmp` kapacitně nestačí, vytvořte samostatný lokální filesystem a nastavte `tmpdir` na jeho adresář.
+
+---
+
+### 4. Ověření výsledku
+
+Po změně spustíme běžný naplánovaný job a zkontrolujeme jeho log. Záloha je použitelná až po ověření obnovy, proto alespoň u testovacího kontejneru provedeme restore pod novým CT ID a ověříme start a data aplikace.
+
+Pokud chyba zůstává i s lokálním `tmpdir`, zkontrolujeme v konfiguraci kontejneru bind mounty a device mounty. Jejich obsah se standardně nezálohuje a pro spravované mount pointy musí být nastaveno `backup=1`:
+
+```bash
+pct config 104
+```
+
+---
+
+### Shrnutí
+
+✅ Dočasnou oblast měníme na Proxmox hostiteli, ne uvnitř kontejneru.  
+✅ Nejdřív změnu ověříme pro jeden job pomocí `--tmpdir`.  
+✅ Před globálním nastavením zkontrolujeme kapacitu lokálního disku.  
+✅ Po opravě ověříme nejen dokončení zálohy, ale také testovací obnovu.
+
+Další informace: [Proxmox VE Administration Guide](https://pve.proxmox.com/pve-docs/pve-admin-guide.html#vzdump_configuration)

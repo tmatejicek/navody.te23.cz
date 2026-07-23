@@ -1,166 +1,173 @@
 ---
-title: "Detekce nešifrovaných LDAP dotazů v prostředí Active Directory"
+title: "Detekce nezabezpečených LDAP vazeb v Active Directory"
 date: 2025-05-15
-tags: [LDAP, Active Directory, Security]
+tags: [LDAP, Active Directory, Security, Graylog]
 layout: post
 ---
 
-## Detekce nešifrovaných LDAP dotazů v prostředí Active Directory
+## Detekce nezabezpečených LDAP vazeb v Active Directory
 
-Tento návod popisuje, jak v prostředí s Active Directory zjistit, zda dochází k nešifrovaným LDAP dotazům. Cílem je poskytnout přehled metod detekce a postup pro aktivaci logování, které pomáhá vyhodnotit rizika spojená s nezabezpečenou komunikací.
+Události `2886` až `2889` pomáhají najít klienty, kteří používají:
 
----
+- SASL LDAP bind (Negotiate, Kerberos, NTLM nebo Digest) bez podpisu,
+- simple bind přes spojení bez SSL/TLS.
 
-### 1. Úvod do problému
-
-LDAP (Lightweight Directory Access Protocol) je často používán bez zabezpečení na portu 389. To může vést k odposlechu nebo úpravě dat v síti.
-
-* Nešifrovaný LDAP umožňuje přenášet citlivé informace v čitelné podobě ⚠
-* Pro bezpečný provoz doporučujeme LDAPS (port 636) nebo LDAP over StartTLS
+📌 **Nejde o obecný detektor veškerého provozu na portu `389`.** LDAP na `389` může použít StartTLS nebo ochranu SASL a být bezpečný; naopak simple bind bez TLS přenáší přihlašovací údaje po síti bez odpovídající ochrany.
 
 ---
 
-### 2. Události v Event Logu
+### 1. Význam událostí
 
-#### 2.1 Základní monitorování (Event ID 2887)
+Události najdeme na každém řadiči domény v logu **Directory Service**.
 
-* Každých 24 hodin
-* Informuje o tom, že došlo k nešifrovaným LDAP dotazům
-* Neobsahuje IP adresy
+| Event ID | Význam |
+|---|---|
+| `2886` | Po startu AD DS upozorní, že řadič domény nevyžaduje LDAP signing. Neříká, že signing nepodporuje. |
+| `2887` | Jednou za 24 hodin shrne povolené unsigned SASL bindy a simple bindy bez TLS. Neobsahuje seznam klientů. |
+| `2888` | Jednou za 24 hodin shrne stejné typy bindů, které řadič domény odmítl, protože signing vyžaduje. |
+| `2889` | Detailní událost pro jednotlivého klienta: IP adresa, identita a typ bindu. Vyžaduje diagnostickou úroveň `2`. |
 
-#### 2.2 Detailní přehled (Event ID 2888, 2889)
-
-* Vyžaduje zapnutí rozšířeného logování
-* Obsahuje IP adresy klientů
-* Pomáhá identifikovat konkrétní zařízení 📌
-
-#### 2.3 Zablokované dotazy (Event ID 2890)
-
-* Zaznamenává pokusy o nešifrované připojení, které bylo odmítnuto
-* Aktivní při nastavení `LDAPServerIntegrity = 2`
-
-#### 2.4 Varování o slabé konfiguraci (Event ID 2886)
-
-* Upozorňuje, že řadič domény nepodporuje LDAP signing ani sealing ⚠
-* Indikátor špatně zabezpečené konfigurace
+📌 Event ID `2890` do této sady LDAP signing událostí nepatří.
 
 ---
 
-### 3. Zapnutí diagnostického logování
+### 2. Zapnutí detailního logování
 
-#### 3.1 Změna registru lokálně
+Nastavení provedeme na všech zapisovatelných řadičích domény. Hodnota se použije okamžitě, restart není nutný.
 
 ```powershell
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "16 LDAP Interface Events" /t REG_DWORD /d 2 /f
 ```
 
-* Změny se obvykle projeví bez restartu, ale někdy je vhodné restartovat DC
+Pro více DC použijeme Group Policy Preferences:
 
-#### 3.2 Nasazení pomocí GPO (přes Preferences)
+1. V GPO aplikovaném pouze na OU **Domain Controllers** otevřeme **Computer Configuration > Preferences > Windows Settings > Registry**.
+2. Vytvoříme nebo aktualizujeme hodnotu `16 LDAP Interface Events` v klíči `HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics`.
+3. Typ nastavíme na `REG_DWORD` a hodnotu na `2`.
 
-* Používáme Group Policy Preferences > Windows Settings > Registry
-* Přidáme klíče do `HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics`
-* GPO aplikujeme na OU s řadiči domény
+⚠️ Úroveň `2` zvyšuje množství událostí. Po dokončení inventury ji můžeme vrátit na `0`, případně upravit nebo odstranit příslušnou GPO Preference:
+
+```powershell
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Diagnostics" /v "16 LDAP Interface Events" /t REG_DWORD /d 0 /f
+```
 
 ---
 
-### 4. Vyhodnocení událostí
+### 3. Vyhodnocení událostí 2889
 
-#### 4.1 Export unikátních IP, uživatelů a typů spojení z eventů 2889
+Následující skript zobrazí jedinečné kombinace IP adresy, účtu a typu bindu za posledních 24 hodin:
 
 ```powershell
-$ComputerName = "localhost"
-$Hours = 24
+$ComputerName = 'dc1.firma.cz'
+$StartTime = (Get-Date).AddHours(-24)
 
-$InsecureLDAPBinds = @()
-
-$StartTime = (Get-Date).AddHours(-$Hours)
-$Events = Get-WinEvent -ComputerName $ComputerName -FilterHashtable @{
-    LogName = 'Directory Service'
+$Rows = foreach ($Event in Get-WinEvent -ComputerName $ComputerName -FilterHashtable @{
+    LogName  = 'Directory Service'
     Id       = 2889
     StartTime = $StartTime
+}) {
+    $Xml = [xml]$Event.ToXml()
+    $Data = @($Xml.Event.EventData.Data | ForEach-Object { [string]$_.'#text' })
+
+    $Endpoint = $Data[0]
+    if ($Endpoint -match '^\[(?<ip>.+)\]:(?<port>\d+)$' -or
+        $Endpoint -match '^(?<ip>.+):(?<port>\d+)$') {
+        $IpAddress = $Matches.ip
+        $SourcePort = [int]$Matches.port
+    }
+    else {
+        $IpAddress = $Endpoint
+        $SourcePort = $null
+    }
+
+    $BindType = switch ([int]$Data[2]) {
+        0 { 'SASL bez podpisu' }
+        1 { 'Simple bind bez TLS' }
+        default { "Neznámý typ ($($Data[2]))" }
+    }
+
+    [pscustomobject]@{
+        DomainController = $ComputerName
+        TimeCreated      = $Event.TimeCreated
+        IPAddress        = $IpAddress
+        SourcePort       = $SourcePort
+        Identity         = $Data[1]
+        BindType         = $BindType
+    }
 }
 
-foreach ($Event in $Events) {
-    try {
-        $eventXml = [xml]$Event.ToXml()
-        $EventData = $eventXml.Event.EventData.Data
-
-        $ClientInfo = $EventData[0]
-        $IPAddress = $ClientInfo.Substring(0, $ClientInfo.LastIndexOf(":"))
-        $User = $EventData[1]
-        $BindTypeCode = [int]$EventData[2]
-
-        switch ($BindTypeCode) {
-            0 { $BindType = "Unsigned" }
-            1 { $BindType = "Simple" }
-            default { $BindType = "Unknown" }
-        }
-
-        $Row = [PSCustomObject]@{
-            IPAddress = $IPAddress
-            User      = $User
-            BindType  = $BindType
-        }
-
-        $InsecureLDAPBinds += $Row
-    }
-    catch {
-        Write-Warning "Chyba při zpracování události: $_"
-    }
-}
-
-$InsecureLDAPBinds | Sort-Object IPAddress, User, BindType -Unique | ft
+$Rows |
+    Sort-Object IPAddress, Identity, BindType -Unique |
+    Format-Table DomainController, IPAddress, Identity, BindType -AutoSize
 ```
 
-#### 4.2 Query pro Graylog
+📌 Skript spustíme pro každý DC. Klient se může připojovat k různým řadičům, takže kontrola jediného serveru není úplná.
 
-Pokud události z logu `Directory Service` přenášíme do Graylogu pomocí Winlogbeatu a v Beats inputu ponecháme výchozí prefixování polí, můžeme si v Graylog Search připravit jednoduché dotazy pro rychlé vyhodnocení.
+---
 
-Přehled všech relevantních LDAP událostí:
+### 4. Vyhodnocení v Graylogu
+
+Pokud Beats input používá výchozí prefixování polí, přehled relevantních událostí získáme dotazem:
 
 ```text
-winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:(2886 OR 2887 OR 2888 OR 2889 OR 2890)
+winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:(2886 OR 2887 OR 2888 OR 2889)
 ```
 
-Zaměření pouze na detailní události s klientskými informacemi:
+Pro hledání konkrétních klientů použijeme pouze detailní události:
 
 ```text
 winlogbeat_winlog_channel:"Directory Service" AND winlogbeat_event_code:2889
 ```
 
-#### 4.3 Poznámka ke konfiguraci Winlogbeat
+💡 Ve výsledcích otevřeme zprávu a ověříme, do kterých polí Winlogbeat uložil IP adresu a identitu. Podle verze Windows a renderování události mohou být údaje také součástí pole `message`; názvy polí proto před vytvořením dashboardu ověříme na skutečné zprávě.
 
-Aby se tyto LDAP události do Graylogu vůbec dostaly, musí Winlogbeat na doménovém řadiči číst log `Directory Service` a filtrovat příslušná event ID:
+#### 4.1 Konfigurace Winlogbeatu
+
+Na doménových řadičích musí Winlogbeat číst log `Directory Service`:
 
 ```yaml
 winlogbeat.event_logs:
   - name: Directory Service
-    event_id: 2886, 2887, 2888, 2889, 2890
+    event_id: 2886, 2887, 2888, 2889
 ```
 
-Současně musí být Winlogbeat nastavený na odesílání do Graylogu přes `output.logstash`. Kompletní příklad konfigurace a nastavení Beats inputu najdete v [samostatném článku o Winlogbeatu a Graylogu]({% post_url 2026-04-15-Nastaveni-Winlogbeat-pro-odesilani-Windows-event-logu-do-Graylogu %}).
+Po změně ověříme konfiguraci a restartujeme službu podle [návodu k Winlogbeatu a Graylogu]({% post_url 2026-04-15-Nastaveni-Winlogbeat-pro-odesilani-Windows-event-logu-do-Graylogu %}).
 
-📌 Události `2888` a `2889` budou k dispozici až po zapnutí rozšířeného LDAP diagnostického logování podle kapitoly 3.
+📌 Událost `2889` vyžaduje diagnostické logování z kapitoly 2. Souhrnné události `2887` a `2888` na tomto nastavení nezávisí.
 
 ---
 
-### 5. Prevence nešifrovaného LDAP
+### 5. Náprava a vynucení LDAP signing
 
-#### 5.1 Vynucení LDAP signing
+Nejprve odstraníme všechny závislosti nalezené v událostech `2889`:
 
-```powershell
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\NTDS\Parameters" /v "LDAPServerIntegrity" /t REG_DWORD /d 2 /f
-```
+- simple bind převedeme na LDAPS (`636`) nebo LDAP s StartTLS a ověříme certifikační řetězec i jméno serveru,
+- SASL klienta nastavíme tak, aby vyžadoval signing,
+- aplikace s pevně uloženým heslem přesuneme na servisní účet s minimálními oprávněními a zabezpečené spojení.
 
-* Všechny klienty je nutné předem otestovat
+Po období bez událostí `2887` nastavíme v GPO pro řadiče domény:
+
+**Computer Configuration > Policies > Windows Settings > Security Settings > Local Policies > Security Options > Domain controller: LDAP server signing requirements > Require signing**
+
+Pro klienty ověříme nastavení:
+
+**Network security: LDAP client signing requirements > Negotiate signing**
+
+⚠️ Po otestování kompatibility lze na vybraných systémech přejít na `Require signing`. Změnu nejprve pilotujeme; nekompatibilní LDAP aplikace mohou po vynucení přestat fungovat.
+
+Funkci ověříme pomocí `ldp.exe`: simple bind na portu `389` bez TLS má po vynucení skončit chybou **Strong Authentication Required**, zatímco LDAPS nebo StartTLS musí nadále fungovat. LDAP channel binding je samostatné bezpečnostní nastavení a vyhodnocuje se jinými událostmi.
 
 ---
 
-## Shrnutí
+### Shrnutí
 
-✅ Nešifrovaný LDAP představuje bezpečnostní riziko  
-✅ Události 2887–2890 poskytují různé úrovně informací  
-✅ Detailní logování lze zapnout přes registr nebo GPO  
-✅ PowerShell i Graylog pomáhají identifikovat konkrétní zařízení a zdroje LDAP dotazů  
-✅ Nastavení LDAPServerIntegrity=2 zvyšuje bezpečnost, ale může přerušit kompatibilitu
+✅ Událost `2887` ukazuje denní souhrn povolených nezabezpečených vazeb.  
+✅ Událost `2889` identifikuje konkrétní klienty a vyžaduje diagnostickou úroveň `2`.  
+✅ Winlogbeat musí z doménových řadičů sbírat log **Directory Service**.  
+✅ Nejdřív opravíme klienty a teprve potom vynutíme LDAP signing.  
+⚠️ Vynucení vždy pilotujeme, protože nekompatibilní aplikace mohou přestat fungovat.
+
+### Zdroje
+
+- [How to enable LDAP signing in Windows Server](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/enable-ldap-signing-in-windows-server)
+- [LDAP signing for Active Directory Domain Services](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/ldap-signing)

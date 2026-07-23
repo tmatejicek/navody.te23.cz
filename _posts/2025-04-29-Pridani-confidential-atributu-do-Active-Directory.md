@@ -1,202 +1,214 @@
 ---
-title: "Přidání confidential atributu do Active Directory"
+title: "Přidání důvěrného atributu do Active Directory"
 date: 2025-04-29
 layout: post
-tags: [ActiveDirectory, Schema, PowerShell, Security]
+tags: [Active Directory, Schema, PowerShell, Security]
 ---
 
-## Jak správně přidat vlastní atribut do Active Directory a umožnit řízený přístup
+## Přidání důvěrného atributu do Active Directory
 
-V tomto návodu si ukážeme, jak krok za krokem přidat vlastní atribut do Active Directory, správně ho připojit ke třídě objektů a nastavit oprávnění ke čtení a zápisu. Cílem je mít plnou kontrolu nad tím, kdo může nový atribut vidět a upravovat.
+Tento postup vytvoří vlastní jednohodnotový textový atribut, připojí jej ke třídě `user` a deleguje čtení jen určené skupině. Změna schématu je lesní a prakticky nevratná, proto ji nejprve ověříme v testovacím forestu.
+
+⚠️ **Příznak `CONFIDENTIAL` hodnotu nešifruje.** Mění kontrolu oprávnění při čtení: vedle `READ_PROPERTY` je potřeba také objektově specifické `CONTROL_ACCESS`. Správci s širokými právy mohou hodnotu nadále přečíst.
 
 ---
 
-## 1. Vytvoření vlastního atributu v AD schématu
+### 1. Příprava
 
-### 1.1 Co je potřeba připravit
-- 📌 Členství v **Schema Admins**.
-- 📌 Aktivní **povolení úprav schématu** (`Schema Update Allowed` v registru).
+Před změnou:
 
-#### Nastavení Schema Update Allowed v registru
-Pro povolení úprav schématu je nutné:
+1. Ověříme replikaci pomocí `repadmin /replsummary` a `dcdiag /e /q`.
+2. Vytvoříme aktuální System State backup alespoň jednoho zapisovatelného řadiče domény.
+3. Přihlásíme se na Schema Master účtem dočasně přidaným do **Schema Admins**.
+4. Po přidání do **Schema Admins** se odhlásíme a znovu přihlásíme, aby bylo členství v přístupovém tokenu.
 
-- Spustíme `regedit`.
-- Přejdeme na klíč:
+📌 System State záloha je součást havarijní připravenosti, ne podporované „undo“ jedné změny schématu. Přidaný objekt schématu běžně neodstraňujeme; chybný atribut lze nanejvýš deaktivovat a nahradit správně navrženým.
 
+Schema Master zjistíme takto:
+
+```powershell
+Import-Module ActiveDirectory
+$SchemaMaster = (Get-ADForest).SchemaMaster
+$SchemaDn = (Get-ADRootDSE -Server $SchemaMaster).schemaNamingContext
+$SchemaMaster
+$SchemaDn
 ```
-HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\NTDS\Parameters
-```
 
-- Vytvoříme nový `DWORD (32-bit)` záznam s názvem:
+Hodnotu registru `Schema Update Allowed` běžně nevytváříme. Na podporovaných verzích AD DS není pro standardní změnu schématu pomocí `ldifde` nutná.
 
-```
-Schema Update Allowed
-```
+---
 
-- Nastavíme jeho hodnotu na `1`.
-- Restartujeme ADSI Edit nebo správu schématu (není potřeba restart serveru).
+### 2. Vygenerování jedinečného OID
 
-⚠ Po dokončení změn v schématu doporučujeme tento klíč opět odebrat nebo nastavit na `0`.
+⚠️ **Každý `attributeID` musí být celosvětově jedinečný. OID z ukázkového článku nebo cizí organizace nikdy nekopírujeme.**
 
-### 1.2 Definice atributu
-Použijeme hodnoty:
-- `attributeSyntax: 2.5.5.12` (Unicode string)
-- `attributeID: 1.2.840.113556.1.8000.2554.28570892.20250403.1` (OID musí být unikátní v rámci celého AD schématu)
-- `oMSyntax: 64` (Text)
-- `isSingleValued: TRUE`
-- `searchFlags: 128` (CONFIDENTIAL)
+Použijeme vlastní registrovanou OID větev nebo Microsoftem publikovaný skript z dokumentace [Obtaining an Object Identifier from Microsoft](https://learn.microsoft.com/en-us/windows/win32/ad/obtaining-an-object-identifier). Výsledek si uložíme do evidence schématu spolu s vlastníkem a účelem atributu.
 
-Příklad v LDIF formátu:
+V dalším příkladu nahradíme:
+
+- `<UNIQUE_OID>` skutečně jedinečným OID,
+- `<SCHEMA_DN>` hodnotou proměnné `$SchemaDn`, například `CN=Schema,CN=Configuration,DC=firma,DC=cz`.
+
+---
+
+### 3. Vytvoření atributu pomocí LDIF
+
+Vytvoříme soubor `confidentialAttribute.ldf`:
 
 ```ldif
-dn: CN=confidentialAttribute,CN=Schema,CN=Configuration,DC=firma,DC=cz
+dn: CN=confidentialAttribute,<SCHEMA_DN>
 changetype: add
 objectClass: attributeSchema
-attributeID: 1.2.840.113556.1.8000.2554.28570892.20250403.1
+lDAPDisplayName: confidentialAttribute
+adminDisplayName: Confidential Attribute
+adminDescription: Důvěrný údaj s řízeným přístupem
+attributeID: <UNIQUE_OID>
 attributeSyntax: 2.5.5.12
 oMSyntax: 64
 isSingleValued: TRUE
+showInAdvancedViewOnly: TRUE
 searchFlags: 128
-lDAPDisplayName: confidentialAttribute
-adminDisplayName: Confidential Attribute
-adminDescription: Tajný atribut pro řízený přístup
+
+dn:
+changetype: modify
+add: schemaUpdateNow
+schemaUpdateNow: 1
+-
+
+dn: CN=User,<SCHEMA_DN>
+changetype: modify
+add: mayContain
+mayContain: confidentialAttribute
+-
+
+dn:
+changetype: modify
+add: schemaUpdateNow
+schemaUpdateNow: 1
+-
 ```
 
-### 1.3 Kde a jak atribut přidat
-Atribut můžeme přidat dvěma způsoby:
-
-- ⚙ **Použitím nástroje ADSI Edit**:
-  - Připojíme se na kontext **Schema**.
-  - Klikneme pravým tlačítkem na `CN=Schema` > **New > Object**.
-  - Vybereme `attributeSchema` a vyplníme potřebné vlastnosti.
-
-- 📄 **Importem přes LDIF soubor**:
-  - Připravíme LDIF soubor podle ukázky.
-  - Spustíme příkaz:
+Soubor importujeme z příkazového řádku spuštěného jako správce:
 
 ```powershell
-ldifde -i -f cesta\k\souboru.ldf -k -j .
+ldifde -i -f .\confidentialAttribute.ldf -s $SchemaMaster -j .
 ```
 
-Před změnami vždy doporučujeme zálohovat aktuální schéma a testovat v izolovaném prostředí. ⚠ Změny schématu jsou trvalé a nelze je později vrátit.
+⚠️ Nepoužíváme přepínač `-k`, protože by mohl skrýt chybu a ponechat import jen částečně provedený. Výsledek ověříme:
+
+```powershell
+$Attribute = Get-ADObject `
+    -Server $SchemaMaster `
+    -Identity "CN=confidentialAttribute,$SchemaDn" `
+    -Properties lDAPDisplayName, attributeID, attributeSyntax, oMSyntax, searchFlags
+
+$UserClass = Get-ADObject `
+    -Server $SchemaMaster `
+    -Identity "CN=User,$SchemaDn" `
+    -Properties mayContain
+
+$Attribute | Format-List lDAPDisplayName, attributeID, attributeSyntax, oMSyntax, searchFlags
+$UserClass.mayContain -contains 'confidentialAttribute'
+repadmin /replsummary
+```
+
+✅ `searchFlags` musí být `128` a poslední příkaz pro `mayContain` musí vrátit `True`. Pokud jako důvěrný označujeme již existující atribut, bit `128` přičteme k jeho současné hodnotě `searchFlags`; ostatní příznaky nesmíme přepsat.
 
 ---
 
-## 2. Připojení atributu ke třídě objektu
+### 4. Delegování přístupu
 
-### 2.1 Význam `mayContain`
-- 📌 `mayContain` definuje, které atributy **mohou být** přítomné u objektů dané třídy.
-- ⚠ Pokud atribut nepřidáme do `mayContain`, nebude možné jeho hodnotu uložit.
+Pro čtení důvěrného atributu nestačí běžné **Read Property**. ACE musí pro konkrétní GUID atributu obsahovat **ReadProperty** i **ExtendedRight** (`CONTROL_ACCESS`). Příkaz `dsacls` neumí spolehlivě vytvořit tuto objektově specifickou kombinaci, proto použijeme rozhraní .NET.
 
-### 2.2 Přidání do třídy `user`
-Postup v ADSI Edit:
-- Otevřeme `CN=User,CN=Schema,CN=Configuration,...`
-- Najdeme vlastnost `mayContain`.
-- Přidáme `confidentialAttribute` do seznamu.
-
----
-
-## 3. Nastavení oprávnění ke čtení a zápisu
-
-### 3.1 Nastavení oprávnění
-Použijeme nástroj `dsacls`.  
-Pro `CONFIDENTIAL` atribut je vhodné rozlišit:
-
-- 📖 **Pouze čtení**:
-
-```cmd
-dsacls "OU=Zamestnanci,DC=firma,DC=cz" /I:S /G "DOMENA\HR Team:RPCA;confidentialAttribute;user"
-```
-
-- ✍️ **Pouze zápis**:
-
-```cmd
-dsacls "OU=Zamestnanci,DC=firma,DC=cz" /I:S /G "DOMENA\IT Team:WPCA;confidentialAttribute;user"
-```
-
-- `RP` = Read Property
-- `WP` = Write Property
-- `CA` = Control Access (nutné pro confidential atributy)
-
-✅ V praxi často nastavujeme čtení a zápis odděleně podle role (např. HR může číst, IT může zapisovat).
-
----
-
-## 4. Testování čtení a zápisu
-
-### 4.1 Skript pro čtení atributu přes Get-ADUser
+Následující skript přidá skupině `DOMENA\HR-Confidential-Readers` právo číst atribut u uživatelů pod zadanou OU:
 
 ```powershell
-$user = Get-ADUser -Identity "testuser" -Properties confidentialAttribute
-$user | Select-Object SamAccountName, confidentialAttribute
+Import-Module ActiveDirectory
 
-$r=(New-Object DirectoryServices.DirectorySearcher "sAMAccountName=testuser");$r.PropertiesToLoad.Add("confidentialAttribute")|Out-Null
-$p=$r.FindOne().Properties
-[pscustomobject]@{SamAccountName=$p.samaccountname[0];ConfidentialAttribute=$p.confidentialattribute[0]}
-```
+$TargetOuDn = 'OU=Zamestnanci,DC=firma,DC=cz'
+$ReaderGroup = 'DOMENA\HR-Confidential-Readers'
+$SchemaDn = (Get-ADRootDSE).schemaNamingContext
 
-✅ Pokud máme práva, uvidíme hodnotu atributu.
+$AttributeBytes = (Get-ADObject `
+    -SearchBase $SchemaDn `
+    -LDAPFilter '(lDAPDisplayName=confidentialAttribute)' `
+    -Properties schemaIDGUID).schemaIDGUID
+$UserClassBytes = (Get-ADObject `
+    -SearchBase $SchemaDn `
+    -LDAPFilter '(&(objectClass=classSchema)(lDAPDisplayName=user))' `
+    -Properties schemaIDGUID).schemaIDGUID
 
-### 4.2 Skript pro čtení atributu přes LDAP jako konkrétní uživatel
+$AttributeGuid = [Guid]::new($AttributeBytes)
+$UserClassGuid = [Guid]::new($UserClassBytes)
+$Identity = [System.Security.Principal.NTAccount]::new($ReaderGroup)
+$Rights = [System.DirectoryServices.ActiveDirectoryRights]::ReadProperty -bor `
+          [System.DirectoryServices.ActiveDirectoryRights]::ExtendedRight
 
-```powershell
-# === ZADÁNÍ PARAMETRŮ ===
-$ldapServer = "ldap.example.local"
-$ldapUser = "DOMENA\ldap-user"
-$searchBase = "DC=firma,DC=cz"
-
-# === ZADÁNÍ HESLA ===
-$password = Read-Host -AsSecureString "Zadej heslo pro $ldapUser"
-$ldapPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
+$Rule = [System.DirectoryServices.ActiveDirectoryAccessRule]::new(
+    $Identity,
+    $Rights,
+    [System.Security.AccessControl.AccessControlType]::Allow,
+    $AttributeGuid,
+    [System.DirectoryServices.ActiveDirectorySecurityInheritance]::Descendents,
+    $UserClassGuid
 )
 
-# LDAP filtr pro uživatele
-$filter = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=testuser))"
-
-# Atributy
-$properties = @("samAccountName", "confidentialAttribute")
-
-# Sestavení úplného LDAP URI
-$ldapPath = "LDAP://$ldapServer/$searchBase"
-
-# Připojení k LDAPu
-$entry = New-Object System.DirectoryServices.DirectoryEntry($ldapPath, $ldapUser, $ldapPassword)
-$searcher = New-Object System.DirectoryServices.DirectorySearcher($entry)
-$searcher.Filter = $filter
-$properties | ForEach-Object { $searcher.PropertiesToLoad.Add($_) } | Out-Null
-
-# Výpis výsledků
-$results = $searcher.FindAll()
-foreach ($result in $results) {
-    $user = $result.Properties
-    Write-Output "$($user['samaccountname']) - $($user['confidentialAttribute'])"
-}
+$Ou = [ADSI]("LDAP://" + $TargetOuDn)
+$Acl = $Ou.psbase.ObjectSecurity
+$Acl.AddAccessRule($Rule)
+$Ou.psbase.ObjectSecurity = $Acl
+$Ou.psbase.CommitChanges()
 ```
 
-### 4.3 Skript pro zápis atributu
+Pro skupinu, která má atribut měnit, vytvoříme samostatnou ACE s právem `WriteProperty` a stejným `$AttributeGuid`.
 
-**Pozor:** `Set-ADUser` standardně nepodporuje zápis vlastních atributů, pokud nejsou zahrnuty v oficiálních AD cmdletech. Proto zapisujeme přes ADSI rozhraní.
+❌ Skupinám nedáváme **Full Control** ani obecné **All Extended Rights**, protože by zpřístupnily i jiné citlivé operace.
 
-```powershell
-$dn = (Get-ADUser "testuser").DistinguishedName
-$user = [ADSI]"LDAP://$dn"
-$user.Put("confidentialAttribute", "Tajná hodnota")
-$user.SetInfo()
-```
-
-✅ Pokud máme práva, hodnota se uloží.
+📌 Delegace se dědí jen na objekty s povolenou dědičností. Na chráněné administrátorské účty spravované pomocí AdminSDHolder se oprávnění z OU zpravidla nepřenese.
 
 ---
 
-## Shrnutí
+### 5. Zápis a test oprávnění
 
-✅ Přidání vlastního atributu do AD vyžaduje úpravu schématu  
-✅ Povolení úprav schématu nastavujeme přes registr pomocí klíče `Schema Update Allowed`    
-✅ Atribut připojujeme k objektové třídě pomocí `mayContain`  
-✅ Pro zpřístupnění confidential atributu nestačí `Read Property` – přidáváme i `Control Access` pomocí `CA`    
-✅ `dsacls.exe` lze použít, pokud syntaxe odpovídá: `RPCA;atribut;typ`    
-✅ Čtení a zápis nastavujeme odděleně pomocí `RPCA` a `WP`  
-✅ Pro zápis vlastních atributů používáme ADSI, ne standardní cmdlety  
-✅ Před jakoukoliv změnou schématu zálohujeme a testujeme v izolovaném prostředí    
-✅ Testování čtení a zápisu ověřuje správné nastavení práv  
+Vlastní atribut lze zapisovat standardním modulem ActiveDirectory:
+
+```powershell
+Set-ADUser -Identity testuser -Replace @{
+    confidentialAttribute = 'Testovací hodnota'
+}
+
+# Odstranění hodnoty
+Set-ADUser -Identity testuser -Clear confidentialAttribute
+```
+
+Pro test hodnotu znovu nastavíme a čtení ověříme pod třemi účty: člen čtecí skupiny, běžný uživatel mimo skupinu a účet s právem zápisu.
+
+```powershell
+$Credential = Get-Credential
+Get-ADUser `
+    -Identity testuser `
+    -Properties confidentialAttribute `
+    -Credential $Credential `
+    -Server dc1.firma.cz |
+    Select-Object SamAccountName, confidentialAttribute
+```
+
+Člen `HR-Confidential-Readers` hodnotu uvidí. Běžnému uživateli se atribut nevrátí. Samostatně ověříme, že zapisovací skupina může hodnotu změnit a nemá širší práva, než bylo zamýšleno.
+
+Po dokončení odebereme administrační účet ze **Schema Admins**, odhlásíme jej a uložíme LDIF, OID, výstup importu a schválení změny do dokumentace.
+
+---
+
+### Shrnutí
+
+✅ Atribut nejprve navrhneme a otestujeme v odděleném forestu.  
+✅ Pro `attributeID` použijeme vlastní jedinečný OID.  
+✅ Důvěrnost nastavuje bit `128` v `searchFlags`; nejde o šifrování hodnoty.  
+✅ Čtení delegujeme kombinací `ReadProperty` a objektově specifického `ExtendedRight`.  
+❌ Změnu schématu nepovažujeme za snadno vratnou a importní chyby neskrýváme přepínačem `-k`.
+
+### Zdroje
+
+- [Mark an attribute as confidential](https://learn.microsoft.com/en-us/troubleshoot/windows-server/windows-security/mark-attribute-as-confidential)
+- [Obtaining an Object Identifier from Microsoft](https://learn.microsoft.com/en-us/windows/win32/ad/obtaining-an-object-identifier)
+- [Set-ADUser](https://learn.microsoft.com/en-us/powershell/module/activedirectory/set-aduser)

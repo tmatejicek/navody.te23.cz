@@ -7,106 +7,69 @@ layout: post
 
 ## Nastavení Winlogbeat pro odesílání Windows Event Logů do Graylogu
 
-V tomto článku si ukážeme, jak nastavit **Winlogbeat** na Windows serveru nebo stanici tak, aby odesílal události do **Graylogu**. Na straně Graylogu použijeme **Beats input**, na straně Winlogbeatu **output.logstash**, protože Graylog Beats input používá stejný protokol jako Logstash Beats receiver.
+Winlogbeat bude číst Windows Event Logy a přes `output.logstash` je odesílat do **Beats inputu** v Graylogu. Příklad navazuje na dvouserverovou instalaci, ve které Graylog běží na `graylog01` a Data Node na `graylog02`.
 
-Tento postup je vhodný například pro sběr:
-
-* běžných Windows Event Logů (`Application`, `System`, `Security`)
-* Sysmon logů
-* PowerShell událostí
-* LDAP událostí z logu `Directory Service` na doménových řadičích
+📌 Pro Graylog používáme `output.logstash`. `output.elasticsearch` ponecháme vypnutý a příkaz `winlogbeat setup` nespouštíme.
 
 ---
 
-### 1. Co připravit předem
+### 1. Vytvoření Beats inputu
 
-Než začneme, ověříme si:
-
-* Graylog server běží a je dostupný po síti
-* z Windows stroje je dostupný Graylog na portu `TCP/5044`
-* na Graylog serveru je povolený firewall pro příjem Beats dat
-
-Pokud navazujeme na předchozí článek o instalaci Graylogu, bude vstup pro Winlogbeat běžet na serveru `graylog01`, tedy na uzlu s Graylog serverem, nikoliv na Data Node.
-
-📌 V tomto scénáři **nepoužíváme Elasticsearch output** ani nespouštíme `winlogbeat setup`, protože data neposíláme do Elastic Stacku, ale do Graylogu.  
-📌 Pokud chceme sbírat LDAP události `2886` až `2890`, musí Winlogbeat běžet na **doménovém řadiči** a v systému musí vznikat záznamy v logu **Directory Service**.
-
----
-
-### 2. Nastavení Beats inputu v Graylogu
-
-V Graylog webovém rozhraní otevřeme:
+V Graylogu otevřeme:
 
 ```text
 System / Inputs
 ```
 
-Ze seznamu inputů vybereme **Beats** a klikneme na **Launch new input**.
+1. V poli **Select input** vybereme `Beats`.
+2. Klikneme na **Launch new input**.
+3. Nastavíme:
+   * **Title**: `Winlogbeat`
+   * **Bind address**: IP adresu Graylogu, případně `0.0.0.0`
+   * **Port**: `5044`
+   * **Global**: zapneme jen tehdy, když má input poslouchat na všech Graylog serverech
+4. Klikneme na **Launch input**.
+5. Dokončíme **Input Setup Wizard**. V Graylogu 7.1 input do dokončení průvodce neběží.
 
-Doporučené základní nastavení:
+📌 V edici Graylog Open obvykle zvolíme **Skip Illuminate** a data nasměrujeme do streamu používajícího `Default index set`. Delší retenci serverových logů nastavíme samostatným streamem podle článku [Základní nastavení Graylogu po instalaci]({% post_url 2026-04-15-Zakladni-nastaveni-Graylogu-po-instalaci %}).
 
-* **Title**: `Winlogbeat`
-* **Bind address**: `0.0.0.0`
-* **Port**: `5044`
-* **Node**: uzel s Graylog serverem, například `graylog01`
+Na firewallu `graylog01` povolíme `TCP/5044` jen z adres spravovaných Windows zařízení. Z klienta ověříme dostupnost:
 
-Pokud máme jen jeden Graylog server, je to nejjednodušší varianta. V prostředí s více Graylog servery můžeme input spouštět jako **Global**, pokud to odpovídá architektuře.
-
-#### 2.1 Doporučení k volbám inputu
-
-Pro běžný provoz většinou stačí:
-
-* ponechat výchozí **Encoding**
-* volitelně zapnout **TCP keepalive**
-* ponechat výchozí pojmenování polí z Beats
-
-📌 Pokud v inputu ponecháme výchozí chování prefixů, budeme v Graylogu typicky vidět pole jako `winlogbeat_winlog_computer_name`, `winlogbeat_winlog_channel`, `winlogbeat_event_code` a podobně.
-
-Po spuštění inputu zkontrolujeme, že opravdu běží na správném portu a správném uzlu.
-
-#### 2.2 Firewall na Graylog serveru
-
-Na Graylog serveru povolíme příjem na portu `5044/TCP`. Bez toho se Winlogbeat nepřipojí, i když bude konfigurace správná.
+```powershell
+Test-NetConnection graylog01 -Port 5044
+```
 
 ---
 
-### 3. Instalace Winlogbeat na Windows
+### 2. Instalace Winlogbeatu z MSI
 
-Pokud používáme **MSI instalátor**, nainstalujeme Winlogbeat standardním instalačním balíčkem pro Windows.
-
-Výchozí cílová cesta MSI instalace bývá:
-
-```text
-C:\Program Files\Elastic\Beats\<verze>\winlogbeat
-```
-
-V našem příkladu budeme používat konkrétní cestu:
+📌 Příklad používá MSI instalaci Winlogbeatu `9.3.0` v cestě:
 
 ```text
 C:\Program Files\Elastic\Beats\9.3.0\winlogbeat
 ```
 
-Po dokončení instalace ověříme, že v systému existuje služba `winlogbeat`:
+Po instalaci ověříme službu i příkaz, kterým byla zaregistrována:
 
 ```powershell
 Get-Service winlogbeat
+Get-CimInstance Win32_Service -Filter "Name='winlogbeat'" |
+    Select-Object Name, State, StartMode, PathName
 ```
 
-📌 Pokud při další aktualizaci přejdeme na novější verzi, změní se i cesta obsahující číslo verze.
+💡 `PathName` je důležité při řešení problémů: ukazuje skutečný konfigurační soubor i případné parametry `path.home`, `path.data` a `path.logs`. Při upgradu se může cesta s číslem verze změnit.
 
 ---
 
-### 4. Konfigurace `winlogbeat.yml`
+### 3. Základní konfigurace stanice nebo serveru
 
-Hlavní konfigurace je v souboru:
+Upravíme soubor:
 
 ```text
 C:\Program Files\Elastic\Beats\9.3.0\winlogbeat\winlogbeat.yml
 ```
 
-Do konfigurace nastavíme logy, které chceme číst, a jako výstup použijeme Graylog server na portu `5044`.
-
-Ukázková konfigurace může vypadat takto:
+Základní konfigurace:
 
 ```yaml
 winlogbeat.event_logs:
@@ -114,141 +77,170 @@ winlogbeat.event_logs:
     ignore_older: 72h
 
   - name: System
+    ignore_older: 72h
 
   - name: Security
-
-  - name: Microsoft-Windows-Sysmon/Operational
+    ignore_older: 72h
 
   - name: Windows PowerShell
     event_id: 400, 403, 600, 800
+    ignore_older: 72h
 
   - name: Microsoft-Windows-PowerShell/Operational
     event_id: 4103, 4104, 4105, 4106
-
-  - name: Directory Service
-    event_id: 2886, 2887, 2888, 2889, 2890
+    ignore_older: 72h
 
 output.logstash:
   hosts: ["graylog01:5044"]
 ```
 
-V našem příkladu používáme stejný název serveru jako v článku o instalaci Graylogu, tedy `graylog01`.
+📌 `ignore_older: 72h` omezuje první načtení starých událostí. Pokud potřebujeme při prvním nasazení poslat i starší záznamy, hodnotu zvětšíme nebo dočasně vynecháme.
 
-#### 4.1 Co tato konfigurace dělá
-
-* `Application`, `System` a `Security` pokrývají základní Windows logy
-* `Microsoft-Windows-Sysmon/Operational` je vhodný pro detailnější bezpečnostní monitoring
-* `Windows PowerShell` a `Microsoft-Windows-PowerShell/Operational` doplňují dohled nad PowerShell aktivitou
-* `Directory Service` s eventy `2886`, `2887`, `2888`, `2889`, `2890` pokrývá detekci nešifrovaných LDAP dotazů a slabé LDAP konfigurace
-* `ignore_older: 72h` u `Application` zabrání jednorázovému načtení příliš starých záznamů
-
-📌 Pokud Sysmon na stanici není nainstalovaný, daný kanál nebude dostupný.  
-📌 Události `4103` a `4104` dávají smysl hlavně tehdy, když máme v prostředí zapnuté PowerShell logging politiky.  
-📌 Události `2888` a `2889` vyžadují zapnuté rozšířené LDAP diagnostické logování, jak je popsáno v [článku o detekci nešifrovaného LDAPu]({% post_url 2025-05-15-Detekce-nesifrovanych-LDAP-dotazu-v-prostredi-Active-Directory %}).
-
-#### 4.2 Na co si dát pozor
-
-V `winlogbeat.yml` nesmí zůstat aktivní jiný výstup, například:
-
-* `output.elasticsearch`
-* `output.console`
-* `output.file`
-
-Pro tento scénář chceme mít aktivní pouze:
-
-```yaml
-output.logstash
-```
+⚠️ V konfiguraci ponecháme aktivní právě jeden output. Zakomentujeme zejména případné bloky `output.elasticsearch`, `output.console` a `output.file`. Pro Graylog také nespouštíme `winlogbeat setup`, protože ten připravuje objekty pro Elastic Stack.
 
 ---
 
-### 5. Ověření konfigurace a spuštění služby
+### 4. Volitelné logy podle role počítače
 
-Nejprve otestujeme syntaxi konfigurace:
+Do `winlogbeat.event_logs` přidáme jen kanály, které na konkrétním počítači existují. Jejich přesné názvy ověříme příkazem:
 
 ```powershell
-cd 'C:\Program Files\Elastic\Beats\9.3.0\winlogbeat'
+Get-WinEvent -ListLog * | Where-Object IsEnabled | Select-Object -ExpandProperty LogName
+```
+
+#### 4.1 Sysmon
+
+Pokud je Sysmon nainstalovaný:
+
+```yaml
+  - name: Microsoft-Windows-Sysmon/Operational
+    ignore_older: 72h
+```
+
+#### 4.2 Doménový řadič a LDAP události
+
+Pouze na doménové řadiče přidáme:
+
+```yaml
+  - name: Directory Service
+    event_id: 2886, 2887, 2888, 2889
+    ignore_older: 72h
+```
+
+📌 Událost `2889`, která identifikuje klienta a typ nezabezpečené LDAP vazby, vyžaduje diagnostické logování kategorie **16 LDAP Interface Events** na úrovni `2`. Postup je v článku [Detekce nezabezpečených LDAP vazeb v prostředí Active Directory]({% post_url 2025-05-15-Detekce-nesifrovanych-LDAP-dotazu-v-prostredi-Active-Directory %}). Události `2886` až `2888` mají jiný účel a zapnutí této diagnostiky pro ně není podmínkou.
+
+#### 4.3 Microsoft DHCP Server
+
+Pouze na DHCP server přidáme:
+
+```yaml
+  - name: Microsoft-Windows-DHCP Server Events/Admin
+    ignore_older: 72h
+
+  - name: Microsoft-Windows-DHCP Server Events/Operational
+    ignore_older: 72h
+```
+
+#### 4.4 Hyper-V
+
+Pouze na Hyper-V hosty přidáme alespoň administrační kanály správy virtuálních počítačů a worker procesů:
+
+```yaml
+  - name: Microsoft-Windows-Hyper-V-VMMS/Admin
+    ignore_older: 72h
+
+  - name: Microsoft-Windows-Hyper-V-Worker/Admin
+    ignore_older: 72h
+```
+
+Další Hyper-V kanály přidáváme až podle konkrétní potřeby a po ověření jejich názvu pomocí `Get-WinEvent -ListLog *Hyper-V*`.
+
+---
+
+### 5. Kontrola konfigurace a spojení
+
+PowerShell spustíme jako správce:
+
+```powershell
+Set-Location 'C:\Program Files\Elastic\Beats\9.3.0\winlogbeat'
 .\winlogbeat.exe test config -c .\winlogbeat.yml -e
+.\winlogbeat.exe test output -c .\winlogbeat.yml -e
 ```
 
-Pokud je vše v pořádku, službu spustíme:
-
-```powershell
-Start-Service winlogbeat
-Get-Service winlogbeat
-```
-
-Při změně konfigurace službu restartujeme:
+První příkaz kontroluje syntaxi, druhý připojení k Beats inputu. Potom službu restartujeme:
 
 ```powershell
 Restart-Service winlogbeat
+Get-Service winlogbeat
 ```
+
+Pokud služba dosud neběžela, použijeme místo restartu `Start-Service winlogbeat`.
+
+✅ Než službu spustíme, musí projít jak `test config`, tak `test output`.
+
+V Graylogu otevřeme `System / Inputs`, u inputu vybereme **Input Diagnosis** a ověříme příchozí zprávy. V `Search` lze při výchozím prefixování Beats polí použít například:
+
+```text
+_exists_:winlogbeat_winlog_computer_name
+```
+
+Na reálné zprávě ověříme zejména pole:
+
+* `winlogbeat_winlog_computer_name`
+* `winlogbeat_winlog_channel`
+* `winlogbeat_event_code`
+
+📌 Prefix závisí na nastavení inputu. Pokud se pole jmenují jinak, další dotazy přizpůsobíme skutečné zprávě, ne pouze příkladům v článku.
 
 ---
 
-### 6. Ověření příjmu dat v Graylogu
+### 6. Zapnutí TLS
 
-Po spuštění Winlogbeatu zkontrolujeme v Graylogu:
-
-* že na Beats inputu roste počet přijatých zpráv
-* že input běží bez chyb
-* že se v přehledu zpráv objevují nové Windows události
-
-V detailu inputu nebo v přehledu **Inputs** sledujeme, zda přibývají přijaté zprávy a zda input nehlásí chyby.
-
-Pokud jsme ponechali výchozí prefixování polí, můžeme při hledání využít například pole:
-
-```text
-winlogbeat_winlog_computer_name
-```
-
-nebo:
-
-```text
-winlogbeat_winlog_channel
-```
-
-Tak snadno ověříme, ze kterého počítače a z jakého event logu zprávy přicházejí.
-
----
-
-### 7. Volitelné zabezpečení pomocí TLS
-
-Pokud nechceme posílat Beats data nešifrovaně, můžeme na Graylog Beats inputu zapnout TLS. V takovém případě doplníme do Winlogbeatu také nastavení důvěryhodné certifikační autority:
+⚠️ Bez TLS jsou události na síti nešifrované. Pro produkční provoz na Beats inputu nastavíme serverový certifikát a privátní klíč a ve Winlogbeatu důvěryhodnou CA:
 
 ```yaml
 output.logstash:
-  hosts: ["graylog01:5044"]
-  ssl.certificate_authorities: ["C:/Program Files/Elastic/Beats/9.3.0/winlogbeat/certs/ca.pem"]
+  hosts: ["graylog01.example.cz:5044"]
+  ssl.certificate_authorities:
+    - "C:/Program Files/Elastic/Beats/9.3.0/winlogbeat/certs/ca.pem"
+  ssl.verification_mode: full
 ```
 
-Pokud budeme vyžadovat i klientské certifikáty, je potřeba je nastavit jak v Graylogu, tak ve Winlogbeatu.
+📌 DNS jméno v `hosts` musí být v `Subject Alternative Name` serverového certifikátu a certifikát nesmí být expirovaný. `ssl.verification_mode: none` nepoužíváme jako trvalé řešení. Pokud na inputu zapneme povinné klientské certifikáty, musíme ve Winlogbeatu doplnit také `ssl.certificate` a `ssl.key`.
+
+Po zapnutí TLS znovu provedeme `test output`.
 
 ---
 
-### 8. Nejčastější problémy
+### 7. Řešení problémů
 
-Pokud se data do Graylogu neposílají, nejčastější příčinou bývá:
+Pokud zprávy nepřicházejí, zkontrolujeme v tomto pořadí:
 
-* Beats input v Graylogu neběží nebo poslouchá na jiném portu
-* firewall blokuje `TCP/5044`
-* v `hosts` je špatné jméno nebo IP adresa serveru
-* ve Winlogbeatu je stále aktivní jiný output než `output.logstash`
-* Sysmon nebo PowerShell logy na stanici vůbec nevznikají
-* log `Directory Service` není na serveru dostupný nebo na DC nejsou zapnuté LDAP diagnostické události
+1. `Test-NetConnection graylog01 -Port 5044`.
+2. Stav a **Input Diagnosis** v `System / Inputs`.
+3. Výstup `winlogbeat.exe test config` a `test output`.
+4. Skutečný příkaz služby v `Win32_Service.PathName`.
+5. Logy v adresáři určeném parametrem `path.logs`.
+6. Existenci nakonfigurovaných Event Log kanálů.
+7. Oprávnění služby číst chráněné kanály, zejména `Security`.
 
-Na Windows straně je vhodné zkontrolovat i logy Winlogbeatu. Jejich umístění určuje `path.logs`; podle aktuální dokumentace Elastic bývá při běžné instalaci služby často:
-
-```text
-C:\Program Files\Winlogbeat-Data\logs
-```
+Nejčastější příčiny jsou firewall, chybné DNS jméno, nedůvěryhodný TLS certifikát, souběžně zapnutý jiný output nebo nakonfigurovaný kanál, který na daném počítači neexistuje.
 
 ---
 
-## Shrnutí
+### Shrnutí
 
-✅ Graylog musí mít spuštěný **Beats input** na `TCP/5044`  
-✅ Winlogbeat musí používat **output.logstash**, nikoliv Elasticsearch output  
-✅ Základní konfigurace může sbírat `Application`, `System`, `Security`, Sysmon, PowerShell i `Directory Service` logy  
-✅ Po spuštění ověřujeme příjem zpráv přes metriky inputu a vyhledávání v Graylogu  
-✅ Pokud chceme bezpečnější provoz, můžeme mezi Winlogbeatem a Graylogem zapnout **TLS**
+✅ Graylog musí mít dokončený a spuštěný **Beats input** na `TCP/5044`.  
+✅ Winlogbeat používá `output.logstash` a v konfiguraci zůstává aktivní jediný output.  
+✅ Kanály přidáváme podle role počítače a ověřujeme jejich skutečný název.  
+✅ Před restartem služby spustíme `test config` i `test output`.  
+✅ V produkčním provozu zabezpečíme spojení mezi Winlogbeatem a Graylogem pomocí TLS.
+
+---
+
+### Zdroje
+
+* [Graylog: Set Up an Input](https://go2docs.graylog.org/current/getting_in_log_data/setup_an_input.htm)
+* [Elastic: Install Winlogbeat](https://www.elastic.co/docs/reference/beats/winlogbeat/winlogbeat-installation-configuration)
+* [Elastic: Secure communication with Logstash](https://www.elastic.co/docs/reference/beats/winlogbeat/configuring-ssl-logstash)
+* [Elastic: Winlogbeat command reference](https://www.elastic.co/docs/reference/beats/winlogbeat/command-line-options)
